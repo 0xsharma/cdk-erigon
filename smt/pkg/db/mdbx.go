@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/hex"
 	"math/big"
 
 	"fmt"
@@ -269,6 +270,25 @@ func (m *EriDb) GetCode(codeHash []byte) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+func (m *EriDb) AddCode(code []byte) error {
+	codeHash, err := utils.HashContractBytecode(hex.EncodeToString(code))
+	if err != nil {
+		return err
+	}
+
+	codeHash = codeHash[2:]
+
+	codeHashBytes, err := hex.DecodeString(codeHash)
+	if err != nil {
+		return err
+	}
+
+	codeHashBytes = utils.ResizeHashTo32BytesByPrefixingWithZeroes(codeHashBytes)
+
+	m.tx.Put(kv.Code, codeHashBytes, code)
+	return nil
 }
 
 func (m *EriDb) PrintDb() {

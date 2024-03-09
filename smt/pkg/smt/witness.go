@@ -2,12 +2,16 @@ package smt
 
 import (
 	"context"
+	"fmt"
+	"math/big"
 
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
 	"github.com/ledgerwatch/erigon/turbo/trie"
+	"github.com/status-im/keycard-go/hexutils"
 )
 
+// BuildWitness creates a witness from the SMT
 func BuildWitness(s *SMT, rd trie.RetainDecider, ctx context.Context) (*trie.Witness, error) {
 	operands := make([]trie.WitnessOperator, 0)
 
@@ -92,4 +96,130 @@ func BuildWitness(s *SMT, rd trie.RetainDecider, ctx context.Context) (*trie.Wit
 	err = s.Traverse(ctx, root, action)
 
 	return trie.NewWitness(operands), err
+}
+
+// func BuildSMTfromWitness builds SMT from witness
+func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
+	// using memdb
+	s := NewSMT(nil)
+
+	storageMap := make(map[string]map[string]string)
+
+	path := make([]int, 0)
+
+	firstNode := true
+	NodeChildCountMap := make(map[string]uint32)
+	NodesBranchValueMap := make(map[string]uint32)
+
+	for i, operator := range w.Operators {
+		switch op := operator.(type) {
+		case *trie.OperatorSMTLeafValue:
+			valScaler := big.NewInt(0).SetBytes(op.Value)
+			addr := libcommon.BytesToAddress(op.Address)
+
+			switch op.NodeType {
+			case utils.KEY_BALANCE:
+				_, err := s.SetAccountBalance(addr.String(), valScaler)
+				if err != nil {
+					fmt.Println("error : unable to set account balance", err)
+				}
+
+			case utils.KEY_NONCE:
+				_, err := s.SetAccountNonce(addr.String(), valScaler)
+				if err != nil {
+					fmt.Println("error : unable to set account nonce", err)
+				}
+
+			case utils.SC_STORAGE:
+				if _, ok := storageMap[addr.String()]; !ok {
+					storageMap[addr.String()] = make(map[string]string)
+				}
+
+				stKey := hexutils.BytesToHex(op.StorageKey)
+				if len(stKey) > 0 {
+					stKey = fmt.Sprintf("0x%s", stKey)
+				}
+
+				storageMap[addr.String()][stKey] = valScaler.String()
+
+				_, err := s.SetContractStorage(addr.String(), storageMap[addr.String()], nil)
+				if err != nil {
+					fmt.Println("error : unable to set contract storage", err)
+				}
+
+			}
+
+			path = path[:len(path)-1]
+			NodeChildCountMap[intArrayToString(path)] += 1
+
+			for len(path) != 0 && NodeChildCountMap[intArrayToString(path)] == NodesBranchValueMap[intArrayToString(path)] {
+				path = path[:len(path)-1]
+			}
+			if NodeChildCountMap[intArrayToString(path)] < NodesBranchValueMap[intArrayToString(path)] {
+				path = append(path, 1)
+			}
+
+		case *trie.OperatorCode:
+			addr := libcommon.BytesToAddress(w.Operators[i+1].(*trie.OperatorSMTLeafValue).Address)
+
+			code := hexutils.BytesToHex(op.Code)
+			if len(code) > 0 {
+				code = fmt.Sprintf("0x%s", code)
+			}
+
+			err := s.SetContractBytecode(addr.String(), code)
+			if err != nil {
+				fmt.Println("error : unable to set contract bytecode", err)
+			}
+
+		case *trie.OperatorBranch:
+			if firstNode {
+				firstNode = false
+			} else {
+				NodeChildCountMap[intArrayToString(path[:len(path)-1])] += 1
+			}
+
+			switch op.Mask {
+			case 1:
+				NodesBranchValueMap[intArrayToString(path)] = 1
+				path = append(path, 0)
+			case 2:
+				NodesBranchValueMap[intArrayToString(path)] = 1
+				path = append(path, 1)
+			case 3:
+				NodesBranchValueMap[intArrayToString(path)] = 2
+				path = append(path, 0)
+			}
+
+		case *trie.OperatorHash:
+			_, err := s.InsertHashNode(path, op.Hash)
+			if err != nil {
+				fmt.Println("error : unable to insert hash node", err)
+			}
+
+			path = path[:len(path)-1]
+			NodeChildCountMap[intArrayToString(path)] += 1
+
+			for len(path) != 0 && NodeChildCountMap[intArrayToString(path)] == NodesBranchValueMap[intArrayToString(path)] {
+				path = path[:len(path)-1]
+			}
+			if NodeChildCountMap[intArrayToString(path)] < NodesBranchValueMap[intArrayToString(path)] {
+				path = append(path, 1)
+			}
+
+		default:
+			// Unsupported operator type
+			return nil, fmt.Errorf("unsupported operator type: %T", op)
+		}
+
+	}
+	return s, nil
+}
+
+func intArrayToString(a []int) string {
+	s := ""
+	for _, v := range a {
+		s += fmt.Sprintf("%d", v)
+	}
+	return s
 }

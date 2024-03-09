@@ -13,16 +13,26 @@ import (
 )
 
 func (s *SMT) SetAccountState(ethAddr string, balance, nonce *big.Int) (*big.Int, error) {
-	keyBalance, err := utils.KeyEthAddrBalance(ethAddr)
-	if err != nil {
-		return nil, err
-	}
-	keyNonce, err := utils.KeyEthAddrNonce(ethAddr)
+	_, err := s.SetAccountBalance(ethAddr, balance)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.InsertKA(keyBalance, balance)
+	auxOut, err := s.SetAccountNonce(ethAddr, nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	return auxOut, nil
+}
+
+func (s *SMT) SetAccountBalance(ethAddr string, balance *big.Int) (*big.Int, error) {
+	keyBalance, err := utils.KeyEthAddrBalance(ethAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	auxRes, err := s.InsertKA(keyBalance, balance)
 	if err != nil {
 		return nil, err
 	}
@@ -33,14 +43,44 @@ func (s *SMT) SetAccountState(ethAddr string, balance, nonce *big.Int) (*big.Int
 		return nil, err
 	}
 
-	auxRes, err := s.InsertKA(keyNonce, nonce)
+	return auxRes.NewRootScalar.ToBigInt(), err
+}
 
+func (s *SMT) SetAccountNonce(ethAddr string, nonce *big.Int) (*big.Int, error) {
+	keyNonce, err := utils.KeyEthAddrNonce(ethAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	ks = utils.EncodeKeySource(utils.KEY_NONCE, utils.ConvertHexToAddress(ethAddr), common.Hash{})
+	auxRes, err := s.InsertKA(keyNonce, nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	ks := utils.EncodeKeySource(utils.KEY_NONCE, utils.ConvertHexToAddress(ethAddr), common.Hash{})
 	err = s.Db.InsertKeySource(keyNonce, ks)
+	if err != nil {
+		return nil, err
+	}
+
+	return auxRes.NewRootScalar.ToBigInt(), err
+}
+
+func (s *SMT) InsertHashNode(path []int, hash libcommon.Hash) (*big.Int, error) {
+	remaining := 256 - len(path)
+	for i := 0; i < remaining; i++ {
+		path = append(path, 0)
+	}
+
+	nk, err := utils.NodeKeyFromPath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	hashStr := hash.String()
+	hashBigInt := convertStringToBigInt(hashStr)
+
+	auxRes, err := s.InsertKA(nk, hashBigInt)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +352,7 @@ func (s *SMT) SetStorage(logPrefix string, accChanges map[libcommon.Address]*acc
 				return nil, nil, err
 			}
 
-			valueBigInt := convertStrintToBigInt(v)
+			valueBigInt := convertStringToBigInt(v)
 			keysBatchStorage = append(keysBatchStorage, &keyStoragePosition)
 			if valuesBatchStorage, isDelete, err = appendToValuesBatchStorageBigInt(valuesBatchStorage, valueBigInt); err != nil {
 				return nil, nil, err
@@ -345,7 +385,7 @@ func (s *SMT) DeleteKeySource(nodeKey *utils.NodeKey) error {
 }
 
 func calcHashVal(v string) (*utils.NodeValue8, [4]uint64, error) {
-	val := convertStrintToBigInt(v)
+	val := convertStringToBigInt(v)
 
 	x := utils.ScalarToArrayBig(val)
 	value, err := utils.NodeValue8FromBigIntArray(x)
@@ -361,7 +401,7 @@ func calcHashVal(v string) (*utils.NodeValue8, [4]uint64, error) {
 	return value, h, nil
 }
 
-func convertStrintToBigInt(v string) *big.Int {
+func convertStringToBigInt(v string) *big.Int {
 	base := 10
 	if strings.HasPrefix(v, "0x") {
 		v = v[2:]

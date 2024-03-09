@@ -100,6 +100,29 @@ func findNode(t *testing.T, w *trie.Witness, addr libcommon.Address, storageKey 
 	return nil
 }
 
+func TestWitnessToSMT(t *testing.T) {
+	smtTrie, rl := prepareSMT(t)
+
+	witness, err := BuildWitness(smtTrie, rl, context.Background())
+	if err != nil {
+		t.Errorf("error building witness: %v", err)
+	}
+
+	for _, operator := range witness.Operators {
+		fmt.Printf("%+v\n", operator)
+	}
+
+	smt, err := BuildSMTfromWitness(witness)
+	if err != nil {
+		t.Errorf("error building SMT from witness: %v", err)
+	}
+
+	smt.PrintTree()
+
+	fmt.Println(smtTrie.getLastRoot())
+	fmt.Println(smt.getLastRoot())
+}
+
 func TestSMTWitnessRetainList(t *testing.T) {
 	smtTrie, rl := prepareSMT(t)
 

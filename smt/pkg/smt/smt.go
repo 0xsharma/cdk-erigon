@@ -31,6 +31,7 @@ type DB interface {
 	Delete(string) error
 	DeleteByNodeKey(key utils.NodeKey) error
 	GetCode(codeHash []byte) ([]byte, error)
+	AddCode(code []byte) error
 
 	SetLastRoot(lr *big.Int) error
 	GetLastRoot() (*big.Int, error)
