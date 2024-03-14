@@ -80,7 +80,7 @@ func (s *SMT) InsertHashNode(path []int, hash libcommon.Hash) (*big.Int, error) 
 	hashStr := hash.String()
 	hashBigInt := convertStringToBigInt(hashStr)
 
-	auxRes, err := s.InsertKA(nk, hashBigInt)
+	auxRes, err := s.InsertHashNodeKA(nk, hashBigInt)
 	if err != nil {
 		return nil, err
 	}

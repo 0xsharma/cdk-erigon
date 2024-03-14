@@ -112,6 +112,9 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 	NodesBranchValueMap := make(map[string]uint32)
 
 	for i, operator := range w.Operators {
+		// TODO : 0xsharma : remove log
+		fmt.Println("path", path, "operator", operator)
+
 		switch op := operator.(type) {
 		case *trie.OperatorSMTLeafValue:
 			valScaler := big.NewInt(0).SetBytes(op.Value)
@@ -212,6 +215,9 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 			return nil, fmt.Errorf("unsupported operator type: %T", op)
 		}
 
+		// TODO : 0xsharma : remove log
+		root, _ := s.getLastRoot()
+		fmt.Println("root", root)
 	}
 	return s, nil
 }

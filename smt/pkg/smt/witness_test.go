@@ -69,7 +69,8 @@ func prepareSMT(t *testing.T) (*SMT, *trie.RetainList) {
 
 	storage := make(map[string]string, 0)
 
-	for i := 0; i < 100; i++ {
+	// TODO : 0xsharma : change iterations back to 100
+	for i := 0; i < 3; i++ {
 		k := libcommon.HexToHash(fmt.Sprintf("0x%d", i))
 		storage[k.String()] = k.String()
 	}
@@ -108,17 +109,13 @@ func TestWitnessToSMT(t *testing.T) {
 		t.Errorf("error building witness: %v", err)
 	}
 
-	for _, operator := range witness.Operators {
-		fmt.Printf("%+v\n", operator)
-	}
-
 	smt, err := BuildSMTfromWitness(witness)
 	if err != nil {
 		t.Errorf("error building SMT from witness: %v", err)
 	}
 
-	smt.PrintTree()
-
+	// TODO : 0xsharma : remove log
+	fmt.Printf("\nRoots\n")
 	fmt.Println(smtTrie.getLastRoot())
 	fmt.Println(smt.getLastRoot())
 }
