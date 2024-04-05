@@ -66,28 +66,6 @@ func (s *SMT) SetAccountNonce(ethAddr string, nonce *big.Int) (*big.Int, error) 
 	return auxRes.NewRootScalar.ToBigInt(), err
 }
 
-func (s *SMT) InsertHashNode(path []int, hash libcommon.Hash) (*big.Int, error) {
-	remaining := 256 - len(path)
-	for i := 0; i < remaining; i++ {
-		path = append(path, 0)
-	}
-
-	nk, err := utils.NodeKeyFromPath(path)
-	if err != nil {
-		return nil, err
-	}
-
-	hashStr := hash.String()
-	hashBigInt := convertStringToBigInt(hashStr)
-
-	auxRes, err := s.InsertHashNodeKA(nk, hashBigInt)
-	if err != nil {
-		return nil, err
-	}
-
-	return auxRes.NewRootScalar.ToBigInt(), err
-}
-
 func (s *SMT) SetAccountStorage(addr libcommon.Address, acc *accounts.Account) error {
 	if acc != nil {
 		n := new(big.Int).SetUint64(acc.Nonce)

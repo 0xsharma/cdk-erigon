@@ -111,10 +111,10 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 	NodeChildCountMap := make(map[string]uint32)
 	NodesBranchValueMap := make(map[string]uint32)
 
-	for i, operator := range w.Operators {
-		// TODO : 0xsharma : remove log
-		fmt.Println("path", path, "operator", operator)
+	hashNodePaths := make([][]int, 0)
+	hashNodeHashes := make([]libcommon.Hash, 0)
 
+	for i, operator := range w.Operators {
 		switch op := operator.(type) {
 		case *trie.OperatorSMTLeafValue:
 			valScaler := big.NewInt(0).SetBytes(op.Value)
@@ -195,10 +195,10 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 			}
 
 		case *trie.OperatorHash:
-			_, err := s.InsertHashNode(path, op.Hash)
-			if err != nil {
-				fmt.Println("error : unable to insert hash node", err)
-			}
+			pathCopy := make([]int, len(path))
+			copy(pathCopy, path)
+			hashNodePaths = append(hashNodePaths, pathCopy)
+			hashNodeHashes = append(hashNodeHashes, op.Hash)
 
 			path = path[:len(path)-1]
 			NodeChildCountMap[intArrayToString(path)] += 1
@@ -214,11 +214,16 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 			// Unsupported operator type
 			return nil, fmt.Errorf("unsupported operator type: %T", op)
 		}
-
-		// TODO : 0xsharma : remove log
-		root, _ := s.getLastRoot()
-		fmt.Println("root", root)
 	}
+
+	for i, path := range hashNodePaths {
+		_, err := s.InsertHashNode(path, hashNodeHashes[i].Big())
+
+		if err != nil {
+			fmt.Println("error : unable to insert hash node", err)
+		}
+	}
+
 	return s, nil
 }
 

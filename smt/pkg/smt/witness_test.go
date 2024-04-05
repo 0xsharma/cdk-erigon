@@ -70,7 +70,7 @@ func prepareSMT(t *testing.T) (*SMT, *trie.RetainList) {
 	storage := make(map[string]string, 0)
 
 	// TODO : 0xsharma : change iterations back to 100
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 100; i++ {
 		k := libcommon.HexToHash(fmt.Sprintf("0x%d", i))
 		storage[k.String()] = k.String()
 	}
@@ -114,10 +114,26 @@ func TestWitnessToSMT(t *testing.T) {
 		t.Errorf("error building SMT from witness: %v", err)
 	}
 
-	// TODO : 0xsharma : remove log
-	fmt.Printf("\nRoots\n")
-	fmt.Println(smtTrie.getLastRoot())
-	fmt.Println(smt.getLastRoot())
+	root, err := smt.Db.GetLastRoot()
+
+	if err != nil {
+		t.Errorf("error getting last root: %v", err)
+	}
+
+	// smt.Traverse(context.Background(), root, func(prefix []byte, k utils.NodeKey, v utils.NodeValue12) (bool, error) {
+	// 	fmt.Printf("[After] path: %v, hash: %x\n", prefix, libcommon.BigToHash(k.ToBigInt()))
+	// 	return true, nil
+	// })
+
+	expectedRoot, err := smtTrie.Db.GetLastRoot()
+
+	if err != nil {
+		t.Errorf("error getting last root: %v", err)
+	}
+
+	if expectedRoot.Cmp(root) != 0 {
+		t.Errorf(fmt.Sprintf("SMT root mismatch, expected %x, got %x", expectedRoot.Bytes(), root.Bytes()))
+	}
 }
 
 func TestSMTWitnessRetainList(t *testing.T) {
