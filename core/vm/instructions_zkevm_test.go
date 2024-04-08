@@ -5,16 +5,17 @@ package vm
 
 import (
 	"fmt"
+	"math/big"
+	"testing"
+
 	"github.com/holiman/uint256"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	types2 "github.com/ledgerwatch/erigon-lib/types"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	types2 "github.com/gateway-fm/cdk-erigon-lib/types"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/core/vm/evmtypes"
 	"github.com/ledgerwatch/erigon/core/vm/stack"
 	"github.com/ledgerwatch/erigon/params"
-	"math/big"
-	"testing"
 )
 
 func TestBlockhashV2(t *testing.T) {
@@ -160,4 +161,4 @@ func (ibs TestIntraBlockState) AddAddressToAccessList(addr libcommon.Address)   
 func (ibs TestIntraBlockState) AddSlotToAccessList(addr libcommon.Address, slot libcommon.Hash) {}
 func (ibs TestIntraBlockState) RevertToSnapshot(int)                                            {}
 func (ibs TestIntraBlockState) Snapshot() int                                                   { return 0 }
-func (ibs TestIntraBlockState) AddLog(*types.Log)                                               {}
+func (ibs TestIntraBlockState) AddLog_zkEvm(*types.Log)                                         {}

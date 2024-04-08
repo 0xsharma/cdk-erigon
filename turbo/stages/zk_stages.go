@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/0xPolygonHermez/zkevm-data-streamer/datastreamer"
-	proto_downloader "github.com/ledgerwatch/erigon-lib/gointerfaces/downloader"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/state"
+	proto_downloader "github.com/gateway-fm/cdk-erigon-lib/gointerfaces/downloader"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/state"
 	"github.com/ledgerwatch/erigon/cmd/sentry/sentry"
 	"github.com/ledgerwatch/erigon/consensus"
 	"github.com/ledgerwatch/erigon/core/vm"
@@ -48,7 +48,7 @@ func NewDefaultZkStages(ctx context.Context,
 	return zkStages.DefaultZkStages(ctx,
 		zkStages.StageL1SyncerCfg(db, l1Syncer, cfg.Zk),
 		zkStages.StageBatchesCfg(db, datastreamClient),
-		zkStages.StageDataStreamCatchupCfg(datastreamServer, db, cfg.Genesis.Config.ChainID.Uint64()),
+		zkStages.StageDataStreamCatchupCfg(datastreamServer, db, cfg.Genesis.Config.ChainID.Uint64(), zkStages.NodeTypeSynchronizer),
 		stagedsync.StageCumulativeIndexCfg(db),
 		stagedsync.StageBlockHashesCfg(db, dirs.Tmp, controlServer.ChainConfig),
 		stagedsync.StageSendersCfg(db, controlServer.ChainConfig, false, dirs.Tmp, cfg.Prune, blockRetire, controlServer.Hd),
@@ -109,7 +109,7 @@ func NewSequencerZkStages(ctx context.Context,
 	return zkStages.SequencerZkStages(ctx,
 		stagedsync.StageCumulativeIndexCfg(db),
 		zkStages.StageL1SequencerSyncCfg(db, cfg.Zk, l1Syncer),
-		zkStages.StageDataStreamCatchupCfg(datastreamServer, db, cfg.Genesis.Config.ChainID.Uint64()),
+		zkStages.StageDataStreamCatchupCfg(datastreamServer, db, cfg.Genesis.Config.ChainID.Uint64(), zkStages.NodeTypeSequencer),
 		zkStages.StageSequencerInterhashesCfg(db, notifications.Accumulator),
 		zkStages.StageSequenceBlocksCfg(
 			db,

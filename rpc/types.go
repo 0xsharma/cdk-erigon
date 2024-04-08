@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 
 	"github.com/ledgerwatch/erigon/common/hexutil"
 )
@@ -129,6 +129,28 @@ func (bn *BlockNumber) UnmarshalJSON(data []byte) error {
 	}
 	*bn = BlockNumber(blckNum)
 	return nil
+}
+
+func (bn *BlockNumber) MarshallJson() string {
+	if bn == nil {
+		return "latest"
+	}
+	switch *bn {
+	case 0:
+		return "earliest"
+	case -1:
+		return "latest"
+	case -2:
+		return "pending"
+	case -3:
+		return "safe"
+	case -4:
+		return "finalized"
+	case -5:
+		return "latestExecuted"
+	default:
+		return fmt.Sprintf("0x%x", *bn)
+	}
 }
 
 func (bn BlockNumber) Int64() int64 {

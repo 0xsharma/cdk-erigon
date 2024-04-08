@@ -22,11 +22,11 @@ import (
 	"math/big"
 	"time"
 
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 
 	"github.com/ledgerwatch/erigon/chain"
 
-	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
 
 	"github.com/ledgerwatch/erigon/common/math"
 	"github.com/ledgerwatch/erigon/consensus"
@@ -126,7 +126,7 @@ func ExecuteBlockEphemerallyZk(
 	}
 
 	blockTime := block.Time()
-	ibs.SyncerPreExecuteStateSet(chainConfig, blockNum, blockTime, prevBlockHash, &blockGer, &l1BlockHash, &gersInBetween)
+	ibs.SyncerPreExecuteStateSet(chainConfig, blockNum, blockTime, prevBlockHash, &blockGer, &l1BlockHash, gersInBetween)
 	blockInfoTree := blockinfo.NewBlockInfoTree()
 	if chainConfig.IsForkID7Etrog(blockNum) {
 		coinbase := block.Coinbase()
@@ -178,7 +178,8 @@ func ExecuteBlockEphemerallyZk(
 			return nil, err
 		}
 
-		receipt, execResult, err := ApplyTransaction_zkevm(chainConfig, blockHashFunc, engine, nil, gp, ibs, noop, header, tx, usedGas, *vmConfig, excessDataGas, effectiveGasPricePercentage)
+		zkConfig := vm.NewZkConfig(*vmConfig, nil)
+		receipt, execResult, err := ApplyTransaction_zkevm(chainConfig, blockHashFunc, engine, nil, gp, ibs, noop, header, tx, usedGas, zkConfig, excessDataGas, effectiveGasPricePercentage)
 		if err != nil {
 			return nil, err
 		}
@@ -239,11 +240,13 @@ func ExecuteBlockEphemerallyZk(
 			}
 		}
 		if !chainConfig.IsForkID7Etrog(block.NumberU64()) {
-			ibs.ScalableSetSmtRootHash(roHermezDb)
+			if err := ibs.ScalableSetSmtRootHash(roHermezDb); err != nil {
+				return nil, err
+			}
 		}
 
-		txSender, _ := tx.GetSender()
 		if chainConfig.IsForkID7Etrog(blockNum) {
+			txSender, _ := tx.GetSender()
 			l2TxHash, err := txTypes.ComputeL2TxHash(
 				tx.GetChainID().ToBig(),
 				tx.GetValue(),

@@ -3,7 +3,7 @@ package legacy_executor_verifier
 import (
 	"context"
 	"errors"
-	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/ledgerwatch/erigon/zk/legacy_executor_verifier/proto/github.com/0xPolygonHermez/zkevm-node/state/runtime/executor"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -70,7 +70,7 @@ func TestExecutor_Verify(t *testing.T) {
 				ContextId:         "cdk-erigon-test",
 			}
 
-			_, err := executor.Verify(payload, tt.expectedStateRoot)
+			_, err := executor.Verify(payload, &VerifierRequest{StateRoot: *tt.expectedStateRoot}, common.Hash{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Executor.Verify() error = %v, wantErr %v", err, tt.wantErr)
 			}

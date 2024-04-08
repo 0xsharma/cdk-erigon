@@ -31,8 +31,8 @@ import (
 	"sync"
 	"time"
 
+	erigonchain "github.com/gateway-fm/cdk-erigon-lib/chain"
 	"github.com/holiman/uint256"
-	erigonchain "github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon/zk/sequencer"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
@@ -40,25 +40,25 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/datadir"
-	"github.com/ledgerwatch/erigon-lib/common/dir"
-	"github.com/ledgerwatch/erigon-lib/direct"
-	downloader3 "github.com/ledgerwatch/erigon-lib/downloader"
-	"github.com/ledgerwatch/erigon-lib/downloader/downloadercfg"
-	"github.com/ledgerwatch/erigon-lib/downloader/downloadergrpc"
-	proto_downloader "github.com/ledgerwatch/erigon-lib/gointerfaces/downloader"
-	"github.com/ledgerwatch/erigon-lib/gointerfaces/grpcutil"
-	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
-	proto_sentry "github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
-	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
-	prototypes "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
-	"github.com/ledgerwatch/erigon-lib/kv/kvcfg"
-	"github.com/ledgerwatch/erigon-lib/kv/remotedbserver"
-	libstate "github.com/ledgerwatch/erigon-lib/state"
-	types2 "github.com/ledgerwatch/erigon-lib/types"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common/datadir"
+	"github.com/gateway-fm/cdk-erigon-lib/common/dir"
+	"github.com/gateway-fm/cdk-erigon-lib/direct"
+	downloader3 "github.com/gateway-fm/cdk-erigon-lib/downloader"
+	"github.com/gateway-fm/cdk-erigon-lib/downloader/downloadercfg"
+	"github.com/gateway-fm/cdk-erigon-lib/downloader/downloadergrpc"
+	proto_downloader "github.com/gateway-fm/cdk-erigon-lib/gointerfaces/downloader"
+	"github.com/gateway-fm/cdk-erigon-lib/gointerfaces/grpcutil"
+	"github.com/gateway-fm/cdk-erigon-lib/gointerfaces/remote"
+	proto_sentry "github.com/gateway-fm/cdk-erigon-lib/gointerfaces/sentry"
+	txpool_proto "github.com/gateway-fm/cdk-erigon-lib/gointerfaces/txpool"
+	prototypes "github.com/gateway-fm/cdk-erigon-lib/gointerfaces/types"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/kv/kvcache"
+	"github.com/gateway-fm/cdk-erigon-lib/kv/kvcfg"
+	"github.com/gateway-fm/cdk-erigon-lib/kv/remotedbserver"
+	libstate "github.com/gateway-fm/cdk-erigon-lib/state"
+	types2 "github.com/gateway-fm/cdk-erigon-lib/types"
 	"github.com/ledgerwatch/erigon/zk/txpool/txpooluitl"
 
 	"github.com/ledgerwatch/erigon/chain"
@@ -124,6 +124,10 @@ import (
 // Config contains the configuration options of the ETH protocol.
 // Deprecated: use ethconfig.Config instead.
 type Config = ethconfig.Config
+
+type PreStartTasks struct {
+	WarmUpDataStream bool
+}
 
 // Ethereum implements the Ethereum full node service.
 type Ethereum struct {
@@ -191,6 +195,9 @@ type Ethereum struct {
 	dataStream *datastreamer.StreamServer
 	l1Syncer   *syncer.L1Syncer
 	etherMan   *etherman.Client
+	nodeType   byte
+
+	preStartTasks *PreStartTasks
 }
 
 func splitAddrIntoHostAndPort(addr string) (host string, port int, err error) {
@@ -310,6 +317,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			Events:      shards.NewEvents(),
 			Accumulator: shards.NewAccumulator(),
 		},
+		preStartTasks: &PreStartTasks{},
 	}
 	blockReader, allSnapshots, agg, err := backend.setUpBlockReader(ctx, config.Dirs, config.Snapshot, config.Downloader, backend.notifications.Events, config.TransactionsV3)
 	if err != nil {
@@ -703,7 +711,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 
-	if err := tx.Commit(); err != nil {
+	executionProgress, err := stages.GetStageProgress(tx, stages.Execution)
+	if err != nil {
 		return nil, err
 	}
 
@@ -723,24 +732,52 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			if err != nil {
 				return nil, err
 			}
+
+			// recovery here now, if the stream got into a bad state we want to be able to delete the file and have
+			// the stream re-populated from scratch.  So we check the stream for the latest header and if it is
+			// 0 we can just set the datastream progress to 0 also which will force a re-population of the stream
+			latestHeader := backend.dataStream.GetHeader()
+			if latestHeader.TotalEntries == 0 {
+				log.Info("[dataStream] setting the stream progress to 0")
+				if err := stages.SaveStageProgress(tx, stages.DataStream, 0); err != nil {
+					return nil, err
+				}
+				backend.preStartTasks.WarmUpDataStream = true
+			}
 		}
 
-		cfg := backend.config.Zk
-
 		// entering ZK territory!
-		if sequencer.IsSequencer() {
+		cfg := backend.config.Zk
+		backend.etherMan = newEtherMan(cfg, chainConfig.ChainName)
+
+		isSequencer := sequencer.IsSequencer()
+		var l1Topics [][]libcommon.Hash
+		var l1Contracts []libcommon.Address
+		if isSequencer {
+			l1Topics = [][]libcommon.Hash{{contracts.UpdateL1InfoTreeTopic, contracts.InitialSequenceBatchesTopic}}
+			l1Contracts = []libcommon.Address{cfg.AddressGerManager, cfg.AddressZkevm}
+		} else {
+			l1Topics = [][]libcommon.Hash{{
+				contracts.SequencedBatchTopicPreEtrog,
+				contracts.SequencedBatchTopicEtrog,
+				contracts.VerificationTopicPreEtrog,
+				contracts.VerificationTopicEtrog,
+			}}
+			l1Contracts = []libcommon.Address{cfg.AddressRollup, cfg.AddressAdmin}
+		}
+
+		backend.l1Syncer = syncer.NewL1Syncer(
+			backend.etherMan.EthClient,
+			l1Contracts,
+			l1Topics,
+			cfg.L1BlockRange,
+			cfg.L1QueryDelay,
+		)
+
+		if isSequencer {
+			backend.nodeType = zkStages.NodeTypeSequencer
+
 			// if we are sequencing transactions, we do the sequencing loop...
-
-			backend.etherMan = newEtherMan(cfg)
-			l1Topics := [][]libcommon.Hash{{contracts.UpdateL1InfoTreeTopic, contracts.InitialSequenceBatchesTopic}}
-			backend.l1Syncer = syncer.NewL1Syncer(
-				backend.etherMan.EthClient,
-				[]libcommon.Address{cfg.L1Rollup, cfg.L1PolygonRollupManager},
-				l1Topics,
-				cfg.L1BlockRange,
-				cfg.L1QueryDelay,
-			)
-
 			witnessGenerator := witness.NewGenerator(
 				config.Dirs,
 				config.HistoryV3,
@@ -772,6 +809,10 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			)
 
 			verifier.StartWork()
+
+			// we need to make sure the pool is always aware of the latest block for when
+			// we switch context from being an RPC node to a sequencer
+			backend.txPool2.ForceUpdateLatestBlock(executionProgress)
 
 			backend.syncStages = stages2.NewSequencerZkStages(
 				backend.sentryCtx,
@@ -805,18 +846,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 			*/
 
+			backend.nodeType = zkStages.NodeTypeSynchronizer
+
 			datastreamClient := initDataStreamClient(cfg)
-
-			l1Topics := [][]libcommon.Hash{{contracts.SequencedBatchTopic, contracts.VerificationTopic}}
-
-			etherMan := newEtherMan(cfg)
-			zkL1Syncer := syncer.NewL1Syncer(
-				etherMan.EthClient,
-				[]libcommon.Address{cfg.L1PolygonRollupManager},
-				l1Topics,
-				cfg.L1BlockRange,
-				cfg.L1QueryDelay,
-			)
 
 			backend.syncStages = stages2.NewDefaultZkStages(
 				backend.sentryCtx,
@@ -829,7 +861,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 				backend.agg,
 				backend.forkValidator,
 				backend.engine,
-				zkL1Syncer,
+				backend.l1Syncer,
 				datastreamClient,
 				backend.dataStream,
 			)
@@ -837,24 +869,30 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			backend.syncUnwindOrder = zkStages.ZkUnwindOrder
 		}
 		// TODO: SEQ: prune order
+
 	} else {
 		backend.syncStages = stages2.NewDefaultStages(backend.sentryCtx, backend.chainDB, stack.Config().P2P, config, backend.sentriesClient, backend.notifications, backend.downloaderClient, allSnapshots, backend.agg, backend.forkValidator, backend.engine)
 		backend.syncUnwindOrder = stagedsync.DefaultUnwindOrder
 		backend.syncPruneOrder = stagedsync.DefaultPruneOrder
 	}
 
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
 	return backend, nil
 }
 
 // creates an EtherMan instance with default parameters
-func newEtherMan(cfg *ethconfig.Zk) *etherman.Client {
+func newEtherMan(cfg *ethconfig.Zk, l2ChainName string) *etherman.Client {
 	ethmanConf := etherman.Config{
 		URL:                       cfg.L1RpcUrl,
 		L1ChainID:                 cfg.L1ChainId,
 		L2ChainID:                 cfg.L2ChainId,
-		PoEAddr:                   cfg.L1PolygonRollupManager,
+		L2ChainName:               l2ChainName,
+		PoEAddr:                   cfg.AddressRollup,
 		MaticAddr:                 cfg.L1MaticContractAddress,
-		GlobalExitRootManagerAddr: cfg.L1GERManagerContractAddress,
+		GlobalExitRootManagerAddr: cfg.AddressGerManager,
 	}
 
 	em, err := etherman.NewClient(ethmanConf)
@@ -871,7 +909,7 @@ func initDataStreamClient(cfg *ethconfig.Zk) *client.StreamClient {
 	// Create client
 	log.Info("Starting datastream client...")
 	// retry connection
-	datastreamClient := client.NewClient(cfg.L2DataStreamerUrl, cfg.DatastreamVersion)
+	datastreamClient := client.NewClient(cfg.L2DataStreamerUrl, cfg.DatastreamVersion, cfg.L2DataStreamerTimeout)
 
 	for i := 0; i < 30; i++ {
 		// Start client (connect to the server)
@@ -956,6 +994,42 @@ func (backend *Ethereum) Init(stack *node.Node, config *ethconfig.Config) error 
 
 	// Register the backend on the node
 	stack.RegisterLifecycle(backend)
+	return nil
+}
+
+func (s *Ethereum) PreStart() error {
+	if s.preStartTasks.WarmUpDataStream {
+		log.Info("[PreStart] warming up data stream")
+		tx, err := s.chainDB.BeginRw(context.Background())
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		// we don't know when the server has actually started as it doesn't expose a signal that is has spun up
+		// so here we loop and take a brief pause waiting for it to be ready
+		attempts := 0
+		for {
+			_, err = zkStages.CatchupDatastream("stream-catchup", tx, s.dataStream, s.nodeType, s.chainConfig.ChainID.Uint64())
+			if err != nil {
+				if errors.Is(err, datastreamer.ErrAtomicOpNotAllowed) {
+					attempts++
+					if attempts == 10 {
+						return err
+					}
+					time.Sleep(500 * time.Millisecond)
+					continue
+				}
+				return err
+			} else {
+				break
+			}
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

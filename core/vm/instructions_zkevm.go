@@ -6,7 +6,7 @@ import (
 	"github.com/iden3/go-iden3-crypto/keccak256"
 
 	"github.com/holiman/uint256"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/params"
@@ -184,7 +184,7 @@ func makeLog_zkevm(size int) executionFunc {
 			d = append(d, make([]byte, 32-lenMod32)...)
 		}
 
-		interpreter.evm.IntraBlockState().AddLog(&types.Log{
+		interpreter.evm.IntraBlockState().AddLog_zkEvm(&types.Log{
 			Address: scope.Contract.Address(),
 			Topics:  topics,
 			Data:    d,

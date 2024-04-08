@@ -23,7 +23,7 @@ import (
 	"sort"
 
 	"github.com/holiman/uint256"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
@@ -357,6 +357,12 @@ func (rl *RetainList) Rewind() {
 
 func (rl *RetainList) String() string {
 	return fmt.Sprintf("%x", rl.hexes)
+}
+
+func (rl *RetainList) Dump() {
+	for i, h := range rl.hexes {
+		fmt.Printf("%d: %v\n", i, h[:16])
+	}
 }
 
 type AlwaysTrueRetainDecider struct{}

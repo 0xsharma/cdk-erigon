@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/holiman/uint256"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/log/v3"
@@ -902,7 +902,7 @@ func makeLog(size int) executionFunc {
 		}
 
 		d := scope.Memory.GetCopy(int64(mStart.Uint64()), int64(mSize.Uint64()))
-		interpreter.evm.IntraBlockState().AddLog(&types.Log{
+		interpreter.evm.IntraBlockState().AddLog_zkEvm(&types.Log{
 			Address: scope.Contract.Address(),
 			Topics:  topics,
 			Data:    d,

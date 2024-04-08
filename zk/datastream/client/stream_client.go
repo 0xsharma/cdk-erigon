@@ -22,12 +22,13 @@ type EntityDefinition struct {
 }
 
 type StreamClient struct {
-	server     string // Server address to connect IP:port
-	version    int
-	streamType StreamType
-	conn       net.Conn
-	id         string            // Client id
-	Header     types.HeaderEntry // Header info received (from Header command)
+	server       string // Server address to connect IP:port
+	version      int
+	streamType   StreamType
+	conn         net.Conn
+	id           string            // Client id
+	Header       types.HeaderEntry // Header info received (from Header command)
+	checkTimeout time.Duration     // time to wait for data before reporting an error
 
 	entriesDefinition map[types.EntryType]EntityDefinition
 
@@ -38,6 +39,7 @@ type StreamClient struct {
 	// Channels
 	l2BlockChan    chan types.FullL2Block
 	gerUpdatesChan chan types.GerUpdate // NB: unused from etrog onwards (forkid 7)
+	errChan        chan error
 }
 
 const (
@@ -57,13 +59,14 @@ const (
 
 // Creates a new client fo datastream
 // server must be in format "url:port"
-func NewClient(server string, version int) *StreamClient {
+func NewClient(server string, version int, checkTimeout time.Duration) *StreamClient {
 	// Create the client data stream
 	c := &StreamClient{
-		server:     server,
-		version:    version,
-		streamType: StSequencer,
-		id:         "",
+		checkTimeout: checkTimeout,
+		server:       server,
+		version:      version,
+		streamType:   StSequencer,
+		id:           "",
 		entriesDefinition: map[types.EntryType]EntityDefinition{
 			types.EntryTypeStartL2Block: {
 				Name:       "StartL2Block",
@@ -88,11 +91,15 @@ func NewClient(server string, version int) *StreamClient {
 		},
 		l2BlockChan:    make(chan types.FullL2Block, 100000),
 		gerUpdatesChan: make(chan types.GerUpdate, 1000),
+		errChan:        make(chan error),
 	}
 
 	return c
 }
 
+func (c *StreamClient) GetErrChan() chan error {
+	return c.errChan
+}
 func (c *StreamClient) GetL2BlockChan() chan types.FullL2Block {
 	return c.l2BlockChan
 }
@@ -138,7 +145,7 @@ func (c *StreamClient) GetHeader() error {
 	// Read packet
 	packet, err := readBuffer(c.conn, 1)
 	if err != nil {
-		return fmt.Errorf("%s read buffer error: %v", c.id, err)
+		return fmt.Errorf("%s read buffer: %v", c.id, err)
 	}
 
 	// Check packet type
@@ -181,7 +188,7 @@ func (c *StreamClient) ReadEntries(bookmark *types.Bookmark, l2BlocksAmount int)
 		encodedBookmark = bookmark.EncodeBigEndian()
 	}
 	if err := c.initiateDownloadBookmark(encodedBookmark); err != nil {
-		return nil, nil, nil, 0, ErrBadBookmark
+		return nil, nil, nil, 0, err
 	}
 
 	fullL2Blocks, gerUpates, bookmarks, entriesRead, err := c.readFullL2Blocks(l2BlocksAmount)
@@ -195,6 +202,15 @@ func (c *StreamClient) ReadEntries(bookmark *types.Bookmark, l2BlocksAmount int)
 // reads entries to the end of the stream
 // at end will wait for new entries to arrive
 func (c *StreamClient) ReadAllEntriesToChannel(bookmark *types.Bookmark) error {
+	// if connection is lost, try to reconnect
+	// this occurs when all 5 attempts failed on previous run
+	if c.conn == nil {
+		if err := c.tryReConnect(); err != nil {
+			c.errChan <- err
+			return fmt.Errorf("failed to reconnect the datastream client: %W", err)
+		}
+	}
+
 	var encodedBookmark []byte
 	if c.version == PreBigEndianVersion {
 		encodedBookmark = bookmark.Encode()
@@ -203,11 +219,14 @@ func (c *StreamClient) ReadAllEntriesToChannel(bookmark *types.Bookmark) error {
 	}
 	// send start command
 	if err := c.initiateDownloadBookmark(encodedBookmark); err != nil {
-		return ErrBadBookmark
+		c.errChan <- err
+		return err
 	}
 
 	if err := c.readAllFullL2BlocksToChannel(); err != nil {
-		return fmt.Errorf("%s read full L2 blocks error: %v", c.id, err)
+		err2 := fmt.Errorf("%s read full L2 blocks error: %v", c.id, err)
+		c.errChan <- err2
+		return err2
 	}
 
 	return nil
@@ -217,7 +236,7 @@ func (c *StreamClient) ReadAllEntriesToChannel(bookmark *types.Bookmark) error {
 func (c *StreamClient) initiateDownloadBookmark(bookmark []byte) error {
 	// send start command
 	if err := c.sendStartBookmarkCmd(bookmark); err != nil {
-		return fmt.Errorf("send start command error: %v", err)
+		return err
 	}
 
 	if err := c.afterStartCommand(); err != nil {
@@ -266,6 +285,9 @@ func (c *StreamClient) afterStartCommand() error {
 func (c *StreamClient) readAllFullL2BlocksToChannel() error {
 	var err error
 	for {
+		if c.checkTimeout > 0 {
+			c.conn.SetReadDeadline(time.Now().Add(c.checkTimeout))
+		}
 		fullBlock, gerUpdates, _, _, _, localErr := c.readFullBlock()
 		if localErr != nil {
 			err = localErr
@@ -280,6 +302,33 @@ func (c *StreamClient) readAllFullL2BlocksToChannel() error {
 		c.lastWrittenTime.Store(time.Now().UnixNano())
 		c.streaming.Store(true)
 		c.l2BlockChan <- *fullBlock
+	}
+
+	c.streaming.Store(false)
+	if c.conn != nil {
+		if err2 := c.conn.Close(); err2 != nil {
+			return fmt.Errorf("failed to close connection after error: %W, close error: %W", err, err2)
+		}
+		c.conn = nil
+	}
+	return err
+}
+
+func (c *StreamClient) tryReConnect() error {
+	var err error
+	for i := 0; i < 5; i++ {
+		if c.conn != nil {
+			if err := c.conn.Close(); err != nil {
+				return err
+			}
+			c.conn = nil
+		}
+		if err = c.Start(); err != nil {
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		c.streaming.Store(true)
+		return nil
 	}
 
 	c.streaming.Store(false)

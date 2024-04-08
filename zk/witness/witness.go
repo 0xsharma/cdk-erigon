@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/datadir"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/memdb"
-	libstate "github.com/ledgerwatch/erigon-lib/state"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common/datadir"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/kv/memdb"
+	libstate "github.com/gateway-fm/cdk-erigon-lib/state"
 	"github.com/ledgerwatch/erigon/chain"
 	"github.com/ledgerwatch/erigon/consensus"
 	"github.com/ledgerwatch/erigon/core"
@@ -33,7 +33,7 @@ import (
 )
 
 var (
-	maxGetProofRewindBlockCount uint64 = 1_000
+	maxGetProofRewindBlockCount uint64 = 10_000
 
 	ErrEndBeforeStart = errors.New("end block must be higher than start block")
 )
@@ -66,7 +66,7 @@ func NewGenerator(
 	}
 }
 
-func (g *Generator) GenerateWitness(tx kv.Tx, ctx context.Context, startBlock, endBlock uint64, debug bool) ([]byte, error) {
+func (g *Generator) GenerateWitness(tx kv.Tx, ctx context.Context, startBlock, endBlock uint64, debug, witnessFull bool) ([]byte, error) {
 	if startBlock > endBlock {
 		return nil, ErrEndBeforeStart
 	}
@@ -171,10 +171,10 @@ func (g *Generator) GenerateWitness(tx kv.Tx, ctx context.Context, startBlock, e
 			return nil, err
 		}
 
-		var globalExitRoots []*dstypes.GerUpdate
+		var globalExitRoots []dstypes.GerUpdate
 
 		if gersInBetween != nil {
-			globalExitRoots = append(globalExitRoots, gersInBetween...)
+			globalExitRoots = append(globalExitRoots, *gersInBetween...)
 		}
 
 		blockGer, err := hermezDb.GetBlockGlobalExitRoot(blockNum)
@@ -188,7 +188,7 @@ func (g *Generator) GenerateWitness(tx kv.Tx, ctx context.Context, startBlock, e
 				GlobalExitRoot: blockGer,
 				Timestamp:      block.Header().Time,
 			}
-			globalExitRoots = append(globalExitRoots, &blockGerUpdate)
+			globalExitRoots = append(globalExitRoots, blockGerUpdate)
 		}
 
 		for _, ger := range globalExitRoots {
@@ -217,14 +217,16 @@ func (g *Generator) GenerateWitness(tx kv.Tx, ctx context.Context, startBlock, e
 		}
 	}
 
-	// todo [zkevm] we need to use this retain list rather than using the always true retain decider
-	rl, err := tds.ResolveSMTRetainList()
-	if err != nil {
-		return nil, err
-	}
+	var rl trie.RetainDecider
+	// if full is true, we will send all the nodes to the witness
+	rl = &trie.AlwaysTrueRetainDecider{}
 
-	// if you ever need to send the full witness then you can use this always true trimmer and the whole state will be sent
-	//rl := &trie.AlwaysTrueRetainDecider{}
+	if !witnessFull {
+		rl, err = tds.ResolveSMTRetainList()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	eridb := db2.NewEriDb(batch)
 	smtTrie := smt.NewSMT(eridb)
@@ -252,12 +254,13 @@ func populateDbTables(batch *memdb.MemoryMutation) error {
 		db2.TableAccountValues,
 		db2.TableMetadata,
 		db2.TableHashKey,
-		db2.TableLastRoot,
+		db2.TableStats,
 		hermez_db.TX_PRICE_PERCENTAGE,
 		hermez_db.BLOCKBATCHES,
 		hermez_db.BLOCK_GLOBAL_EXIT_ROOTS,
 		hermez_db.GLOBAL_EXIT_ROOTS_BATCHES,
 		hermez_db.STATE_ROOTS,
+		hermez_db.BATCH_WITNESSES,
 	}
 
 	for _, t := range tables {

@@ -5,18 +5,19 @@ import (
 	"fmt"
 	"math/big"
 
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
-	"github.com/ledgerwatch/erigon-lib/gointerfaces"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common/hexutility"
+	"github.com/gateway-fm/cdk-erigon-lib/gointerfaces"
 	"google.golang.org/grpc"
 
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
 
-	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
+	txpool_proto "github.com/gateway-fm/cdk-erigon-lib/gointerfaces/txpool"
 
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/rpc"
+	"github.com/ledgerwatch/erigon/zk/sequencer"
 )
 
 // GetBalance implements eth_getBalance. Returns the balance of an account for a given address.
@@ -44,7 +45,22 @@ func (api *APIImpl) GetBalance(ctx context.Context, address libcommon.Address, b
 }
 
 // GetTransactionCount implements eth_getTransactionCount. Returns the number of transactions sent from an address (the nonce).
-func (api *APIImpl) GetTransactionCount(ctx context.Context, address libcommon.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
+func (api *APIImpl) GetTransactionCount(ctx context.Context, address libcommon.Address, blockNrOrHash *rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
+	// zkevm: forward requests to the sequencer
+	if !sequencer.IsSequencer() {
+		res, err := api.sendGetTransactionCountToSequencer(api.l2RpcUrl, address, blockNrOrHash)
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
+
+	// if not set, use latest
+	if blockNrOrHash == nil {
+		tmp := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
+		blockNrOrHash = &tmp
+	}
+
 	if blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber == rpc.PendingBlockNumber {
 		reply, err := api.txPool.Nonce(ctx, &txpool_proto.NonceRequest{
 			Address: gointerfaces.ConvertAddressToH160(address),
@@ -62,7 +78,7 @@ func (api *APIImpl) GetTransactionCount(ctx context.Context, address libcommon.A
 		return nil, fmt.Errorf("getTransactionCount cannot open tx: %w", err1)
 	}
 	defer tx.Rollback()
-	reader, err := rpchelper.CreateStateReader(ctx, tx, blockNrOrHash, 0, api.filters, api.stateCache, api.historyV3(tx), "")
+	reader, err := rpchelper.CreateStateReader(ctx, tx, *blockNrOrHash, 0, api.filters, api.stateCache, api.historyV3(tx), "")
 	if err != nil {
 		return nil, err
 	}

@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	ethereum "github.com/ledgerwatch/erigon"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/eth/ethconfig"
 	"github.com/ledgerwatch/erigon/zkevm/etherman"
@@ -115,9 +115,9 @@ func newEtherMan(cfg *ethconfig.Zk) *etherman.Client {
 		URL:                       cfg.L1RpcUrl,
 		L1ChainID:                 cfg.L1ChainId,
 		L2ChainID:                 cfg.L2ChainId,
-		PoEAddr:                   cfg.L1PolygonRollupManager,
+		PoEAddr:                   cfg.AddressRollup,
 		MaticAddr:                 cfg.L1MaticContractAddress,
-		GlobalExitRootManagerAddr: cfg.L1GERManagerContractAddress,
+		GlobalExitRootManagerAddr: cfg.AddressGerManager,
 	}
 
 	em, err := etherman.NewClient(ethmanConf)

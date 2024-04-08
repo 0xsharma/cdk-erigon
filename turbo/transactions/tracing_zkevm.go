@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"math/big"
 
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/kv"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/chain"
@@ -108,7 +108,8 @@ func ComputeTxEnv_ZkEvm(ctx context.Context, engine consensus.EngineReader, bloc
 		return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, err
 	}
 
-	statedb.SyncerPreExecuteStateSet(cfg, BlockContext.BlockNumber, BlockContext.Time, nil /* not going to affect trace*/, &blockGer, &l1BlockHash, &gersInBetween)
+	parentHash := block.ParentHash()
+	statedb.SyncerPreExecuteStateSet(cfg, BlockContext.BlockNumber, BlockContext.Time, &parentHash, &blockGer, &l1BlockHash, gersInBetween)
 	///////////////////////////////////////////
 	// [zkevm] finish set preexecution state //
 	///////////////////////////////////////////

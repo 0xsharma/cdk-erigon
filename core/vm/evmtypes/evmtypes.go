@@ -4,8 +4,8 @@ import (
 	"math/big"
 
 	"github.com/holiman/uint256"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	types2 "github.com/ledgerwatch/erigon-lib/types"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	types2 "github.com/gateway-fm/cdk-erigon-lib/types"
 
 	"github.com/ledgerwatch/erigon/core/types"
 )
@@ -79,6 +79,8 @@ type IntraBlockState interface {
 	GetCommittedState(libcommon.Address, *libcommon.Hash, *uint256.Int)
 	GetState(address libcommon.Address, slot *libcommon.Hash, outValue *uint256.Int)
 	SetState(libcommon.Address, *libcommon.Hash, uint256.Int)
+	HasLiveAccount(addr libcommon.Address) bool
+	HasLiveState(addr libcommon.Address, key *libcommon.Hash) bool
 
 	Selfdestruct(libcommon.Address) bool
 	HasSelfdestructed(libcommon.Address) bool
@@ -104,5 +106,6 @@ type IntraBlockState interface {
 	Snapshot() int
 
 	AddLog(*types.Log)
+	AddLog_zkEvm(*types.Log)
 	GetLogs(hash libcommon.Hash) []*types.Log
 }
