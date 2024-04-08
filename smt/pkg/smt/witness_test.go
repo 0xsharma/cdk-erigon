@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/holiman/uint256"
 	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/gateway-fm/cdk-erigon-lib/kv/memdb"
+	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon/chain"
 	"github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/smt/pkg/db"
@@ -105,12 +105,12 @@ func findNode(t *testing.T, w *trie.Witness, addr libcommon.Address, storageKey 
 func TestWitnessToSMT(t *testing.T) {
 	smtTrie, rl := prepareSMT(t)
 
-	witness, err := BuildWitness(smtTrie, rl, context.Background())
+	witness, err := smt.BuildWitness(smtTrie, rl, context.Background())
 	if err != nil {
 		t.Errorf("error building witness: %v", err)
 	}
 
-	smt, err := BuildSMTfromWitness(witness)
+	smt, err := smt.BuildSMTfromWitness(witness)
 	if err != nil {
 		t.Errorf("error building SMT from witness: %v", err)
 	}
