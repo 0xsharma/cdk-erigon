@@ -10,9 +10,9 @@ import (
 
 	"sort"
 
-	poseidon "github.com/gateway-fm/vectorized-poseidon-gold/src/vectorizedposeidongold"
 	"github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/gateway-fm/cdk-erigon-lib/common/length"
+	poseidon "github.com/gateway-fm/vectorized-poseidon-gold/src/vectorizedposeidongold"
 )
 
 const (

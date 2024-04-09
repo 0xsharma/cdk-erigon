@@ -108,6 +108,9 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 	// using memdb
 	s := NewSMT(nil)
 
+	balanceMap := make(map[string]*big.Int)
+	nonceMap := make(map[string]*big.Int)
+	contractMap := make(map[string]string)
 	storageMap := make(map[string]map[string]string)
 
 	path := make([]int, 0)
@@ -116,8 +119,12 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 	NodeChildCountMap := make(map[string]uint32)
 	NodesBranchValueMap := make(map[string]uint32)
 
-	hashNodePaths := make([][]int, 0)
-	hashNodeHashes := make([]libcommon.Hash, 0)
+	type nodeHash struct {
+		path []int
+		hash libcommon.Hash
+	}
+
+	nodeHashes := make([]nodeHash, 0)
 
 	for i, operator := range w.Operators {
 		switch op := operator.(type) {
@@ -127,16 +134,10 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 
 			switch op.NodeType {
 			case utils.KEY_BALANCE:
-				_, err := s.SetAccountBalance(addr.String(), valScaler)
-				if err != nil {
-					fmt.Println("error : unable to set account balance", err)
-				}
+				balanceMap[addr.String()] = valScaler
 
 			case utils.KEY_NONCE:
-				_, err := s.SetAccountNonce(addr.String(), valScaler)
-				if err != nil {
-					fmt.Println("error : unable to set account nonce", err)
-				}
+				nonceMap[addr.String()] = valScaler
 
 			case utils.SC_STORAGE:
 				if _, ok := storageMap[addr.String()]; !ok {
@@ -149,12 +150,6 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 				}
 
 				storageMap[addr.String()][stKey] = valScaler.String()
-
-				_, err := s.SetContractStorage(addr.String(), storageMap[addr.String()], nil)
-				if err != nil {
-					fmt.Println("error : unable to set contract storage", err)
-				}
-
 			}
 
 			path = path[:len(path)-1]
@@ -175,10 +170,7 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 				code = fmt.Sprintf("0x%s", code)
 			}
 
-			err := s.SetContractBytecode(addr.String(), code)
-			if err != nil {
-				fmt.Println("error : unable to set contract bytecode", err)
-			}
+			contractMap[addr.String()] = code
 
 		case *trie.OperatorBranch:
 			if firstNode {
@@ -202,8 +194,7 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 		case *trie.OperatorHash:
 			pathCopy := make([]int, len(path))
 			copy(pathCopy, path)
-			hashNodePaths = append(hashNodePaths, pathCopy)
-			hashNodeHashes = append(hashNodeHashes, op.Hash)
+			nodeHashes = append(nodeHashes, nodeHash{path: pathCopy, hash: op.Hash})
 
 			path = path[:len(path)-1]
 			NodeChildCountMap[intArrayToString(path)] += 1
@@ -221,11 +212,45 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 		}
 	}
 
-	for i, path := range hashNodePaths {
-		_, err := s.InsertHashNode(path, hashNodeHashes[i].Big())
+	for _, nodeHash := range nodeHashes {
+		_, err := s.InsertHashNode(nodeHash.path, nodeHash.hash.Big())
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = s.Db.GetLastRoot()
 
 		if err != nil {
-			fmt.Println("error : unable to insert hash node", err)
+			return nil, err
+		}
+	}
+
+	for addr, balance := range balanceMap {
+		_, err := s.SetAccountBalance(addr, balance)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for addr, nonce := range nonceMap {
+		_, err := s.SetAccountNonce(addr, nonce)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for addr, code := range contractMap {
+		err := s.SetContractBytecode(addr, code)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for addr, storage := range storageMap {
+
+		_, err := s.SetContractStorage(addr, storage, nil)
+		if err != nil {
+			fmt.Println("error : unable to set contract storage", err)
 		}
 	}
 

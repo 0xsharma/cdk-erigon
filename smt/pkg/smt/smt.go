@@ -31,7 +31,6 @@ type DB interface {
 	Delete(string) error
 	DeleteByNodeKey(key utils.NodeKey) error
 	GetCode(codeHash []byte) ([]byte, error)
-	AddCode(code []byte) error
 
 	SetLastRoot(lr *big.Int) error
 	GetLastRoot() (*big.Int, error)
@@ -158,7 +157,7 @@ func (s *SMT) InsertStorage(ethAddr string, storage *map[string]string, chm *map
 			return nil, err
 		}
 
-		smtr, err = s.insert(keyStoragePosition, *(*chm)[k], (*vhm)[k], *smtr.NewRootScalar, false)
+		smtr, err = s.insert(keyStoragePosition, *(*chm)[k], (*vhm)[k], *smtr.NewRootScalar)
 		if err != nil {
 			return nil, err
 		}
@@ -193,7 +192,7 @@ func (s *SMT) insertSingle(k utils.NodeKey, v utils.NodeValue8, newValH [4]uint6
 		return nil, err
 	}
 
-	smtr, err := s.insert(k, v, newValH, or, false)
+	smtr, err := s.insert(k, v, newValH, or)
 	if err != nil {
 		return nil, err
 	}
@@ -205,16 +204,11 @@ func (s *SMT) insertSingle(k utils.NodeKey, v utils.NodeValue8, newValH [4]uint6
 	return smtr, nil
 }
 
-func (s *SMT) insert(k utils.NodeKey, v utils.NodeValue8, newValH [4]uint64, oldRoot utils.NodeKey, hashNode bool) (*SMTResponse, error) {
+func (s *SMT) insert(k utils.NodeKey, v utils.NodeValue8, newValH [4]uint64, oldRoot utils.NodeKey) (*SMTResponse, error) {
 	newRoot := oldRoot
 
 	smtResponse := &SMTResponse{
 		Mode: "not run",
-	}
-
-	if hashNode {
-		newValHBig := utils.ArrayToScalar(newValH[:])
-		v = utils.ScalarToNodeValue8(newValHBig)
 	}
 
 	// split the key
@@ -325,27 +319,21 @@ func (s *SMT) insert(k utils.NodeKey, v utils.NodeValue8, newValH [4]uint64, old
 					return nil, err
 				}
 
-				var newLeafHash [4]uint64
+				newKey := utils.RemoveKeyBits(k, level2+1)
 
-				if hashNode {
-					newLeafHash = newValH
+				if newValH == [4]uint64{} {
+					newValH, err = s.hashcalcAndSave(v.ToUintArray(), utils.BranchCapacity)
 				} else {
-					if newValH == [4]uint64{} {
-						newValH, err = s.hashcalcAndSave(v.ToUintArray(), utils.BranchCapacity)
-					} else {
-						newValH, err = s.hashSave(v.ToUintArray(), utils.BranchCapacity, newValH)
-					}
+					newValH, err = s.hashSave(v.ToUintArray(), utils.BranchCapacity, newValH)
+				}
 
-					if err != nil {
-						return nil, err
-					}
+				if err != nil {
+					return nil, err
+				}
 
-					newKey := utils.RemoveKeyBits(k, level2+1)
-
-					newLeafHash, err = s.hashcalcAndSave(utils.ConcatArrays4(newKey, newValH), utils.LeafCapacity)
-					if err != nil {
-						return nil, err
-					}
+				newLeafHash, err := s.hashcalcAndSave(utils.ConcatArrays4(newKey, newValH), utils.LeafCapacity)
+				if err != nil {
+					return nil, err
 				}
 
 				s.Db.InsertHashKey(newLeafHash, k)
@@ -396,30 +384,22 @@ func (s *SMT) insert(k utils.NodeKey, v utils.NodeValue8, newValH [4]uint64, old
 		} else {
 			// INSERT NOT FOUND
 			smtResponse.Mode = "insertNotFound"
+			newKey := utils.RemoveKeyBits(k, level+1)
 
-			var newLeafHash [4]uint64
-
-			if hashNode {
-				newLeafHash = newValH
+			if newValH == [4]uint64{} {
+				newValH, err = s.hashcalcAndSave(v.ToUintArray(), utils.BranchCapacity)
 			} else {
+				newValH, err = s.hashSave(v.ToUintArray(), utils.BranchCapacity, newValH)
+			}
+			if err != nil {
+				return nil, err
+			}
 
-				if newValH == [4]uint64{} {
-					newValH, err = s.hashcalcAndSave(v.ToUintArray(), utils.BranchCapacity)
-				} else {
-					newValH, err = s.hashSave(v.ToUintArray(), utils.BranchCapacity, newValH)
-				}
-				if err != nil {
-					return nil, err
-				}
+			nk := utils.ConcatArrays4(newKey, newValH)
 
-				newKey := utils.RemoveKeyBits(k, level+1)
-
-				nk := utils.ConcatArrays4(newKey, newValH)
-
-				newLeafHash, err = s.hashcalcAndSave(nk, utils.LeafCapacity)
-				if err != nil {
-					return nil, err
-				}
+			newLeafHash, err := s.hashcalcAndSave(nk, utils.LeafCapacity)
+			if err != nil {
+				return nil, err
 			}
 
 			s.Db.InsertHashKey(newLeafHash, k)
@@ -742,17 +722,9 @@ func (s *SMT) traverseAndMark(ctx context.Context, node *big.Int, visited Visite
 	})
 }
 
+// InsertHashNode inserts a hash node into the SMT. The SMT should not contain any other leaf nodes with the same path prefix. Otherwise, the new root hash will be incorrect.
+// TODO: Support insertion of hash nodes even if there are leaf nodes with the same path prefix in SMT.
 func (s *SMT) InsertHashNode(path []int, hash *big.Int) (*big.Int, error) {
-	remaining := 256 - len(path)
-	for i := 0; i < remaining; i++ {
-		path = append(path, 0)
-	}
-
-	nk, err := utils.NodeKeyFromPath(path)
-	if err != nil {
-		return nil, err
-	}
-
 	s.clearUpMutex.Lock()
 	defer s.clearUpMutex.Unlock()
 
@@ -766,15 +738,74 @@ func (s *SMT) InsertHashNode(path []int, hash *big.Int) (*big.Int, error) {
 	var nodeHash [4]uint64
 	copy(nodeHash[:], h[:4])
 
-	smtr, err := s.insert(nk, utils.NodeValue8{}, nodeHash, or, true)
+	lastRoot, err := s.insertHashNode(path, nodeHash, or)
 
 	if err != nil {
 		return nil, err
 	}
 
-	if err = s.setLastRoot(*smtr.NewRootScalar); err != nil {
+	if err = s.setLastRoot(lastRoot); err != nil {
 		return nil, err
 	}
 
-	return smtr.NewRootScalar.ToBigInt(), nil
+	return lastRoot.ToBigInt(), nil
+}
+
+func (s *SMT) insertHashNode(path []int, hash [4]uint64, root utils.NodeKey) (utils.NodeKey, error) {
+	if len(path) == 0 {
+		newValHBig := utils.ArrayToScalar(hash[:])
+		v := utils.ScalarToNodeValue8(newValHBig)
+
+		_, err := s.hashSave(v.ToUintArray(), utils.LeafCapacity, hash)
+		if err != nil {
+			return utils.NodeKey{}, err
+		}
+
+		return hash, nil
+	}
+
+	rootVal := utils.NodeValue12{}
+
+	if !root.IsZero() {
+		v, err := s.Db.Get(root)
+		if err != nil {
+			return utils.NodeKey{}, err
+		}
+
+		rootVal = v
+	}
+
+	childIndex := path[0]
+
+	childOldRoot := rootVal[childIndex*4 : childIndex*4+4]
+
+	childNewRoot, err := s.insertHashNode(path[1:], hash, utils.NodeKeyFromBigIntArray(childOldRoot))
+
+	if err != nil {
+		return utils.NodeKey{}, err
+	}
+
+	var newIn [8]uint64
+
+	emptyRootVal := utils.NodeValue12{}
+
+	if childIndex == 0 {
+		var sibling [4]uint64
+		if rootVal == emptyRootVal {
+			sibling = [4]uint64{0, 0, 0, 0}
+		} else {
+			sibling = *rootVal.Get4to8()
+		}
+		newIn = utils.ConcatArrays4(childNewRoot, sibling)
+	} else {
+		var sibling [4]uint64
+		if rootVal == emptyRootVal {
+			sibling = [4]uint64{0, 0, 0, 0}
+		} else {
+			sibling = *rootVal.Get0to4()
+		}
+		newIn = utils.ConcatArrays4(sibling, childNewRoot)
+	}
+
+	return s.hashcalcAndSave(newIn, utils.BranchCapacity)
 }
