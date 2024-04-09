@@ -12,7 +12,7 @@ import (
 
 	"github.com/holiman/uint256"
 	ethereum "github.com/ledgerwatch/erigon"
-	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/ledgerwatch/erigon/accounts/abi"
 	"github.com/ledgerwatch/erigon/accounts/abi/bind"
 	"github.com/ledgerwatch/erigon/chain"
@@ -161,12 +161,19 @@ func NewClient(cfg Config) (*Client, error) {
 	switch cfg.L1ChainID {
 	case params.MainnetChainConfig.ChainID.Uint64():
 		l1Conf = params.MainnetChainConfig
-		l2Conf = params.HermezMainnetChainConfig
+		l2Conf = params.ChainConfigByChainName(cfg.L2ChainName)
 	case params.SepoliaChainConfig.ChainID.Uint64():
 		l1Conf = params.SepoliaChainConfig
-		l2Conf = params.ChainConfigByChainName(zkchainconfig.GetChainName(cfg.L2ChainID))
+		l2Conf = params.ChainConfigByChainName(cfg.L2ChainName)
 	default:
-		panic(fmt.Sprintf("L1 chain ID %d not supported", cfg.L1ChainID))
+		l1Conf = params.ChainConfigByChainName(zkchainconfig.GetChainName(cfg.L1ChainID))
+		l2Conf = params.ChainConfigByChainName(cfg.L2ChainName)
+	}
+	if l1Conf == nil {
+		panic(fmt.Sprintf("Config not found for L1 chain ID %d", cfg.L1ChainID))
+	}
+	if l2Conf == nil {
+		panic(fmt.Sprintf("Config not found for L2 chain ID %d", cfg.L2ChainID))
 	}
 
 	return &Client{

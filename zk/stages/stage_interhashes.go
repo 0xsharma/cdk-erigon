@@ -3,11 +3,11 @@ package stages
 import (
 	"fmt"
 
-	"github.com/ledgerwatch/erigon-lib/common"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/state"
+	"github.com/gateway-fm/cdk-erigon-lib/common"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common/length"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/state"
 	state2 "github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/core/types"
 	db2 "github.com/ledgerwatch/erigon/smt/pkg/db"
@@ -39,6 +39,7 @@ import (
 	"github.com/ledgerwatch/erigon/turbo/trie"
 	"github.com/ledgerwatch/erigon/zk"
 	"github.com/status-im/keycard-go/hexutils"
+	"os"
 )
 
 type ZkInterHashesCfg struct {
@@ -80,7 +81,7 @@ func StageZkInterHashesCfg(
 	}
 }
 
-func SpawnZkIntermediateHashesStage(s *stagedsync.StageState, u stagedsync.Unwinder, tx kv.RwTx, cfg ZkInterHashesCfg, ctx context.Context, quiet bool) (libcommon.Hash, error) {
+func SpawnZkIntermediateHashesStage(s *stagedsync.StageState, u stagedsync.Unwinder, tx kv.RwTx, cfg ZkInterHashesCfg, ctx context.Context, quiet bool) (root libcommon.Hash, err error) {
 	logPrefix := s.LogPrefix()
 
 	quit := ctx.Done()
@@ -100,6 +101,19 @@ func SpawnZkIntermediateHashesStage(s *stagedsync.StageState, u stagedsync.Unwin
 	if err != nil {
 		return trie.EmptyRoot, err
 	}
+
+	///// DEBUG BISECT /////
+	defer func() {
+		if cfg.zk.DebugLimit > 0 {
+			if err != nil {
+				log.Error("Hashing Failed", "block", to, "err", err)
+				os.Exit(1)
+			} else if to >= cfg.zk.DebugLimit {
+				os.Exit(0)
+			}
+		}
+	}()
+	///////////////////////
 
 	if s.BlockNumber == to {
 		// we already did hash check for this block
@@ -124,8 +138,6 @@ func SpawnZkIntermediateHashesStage(s *stagedsync.StageState, u stagedsync.Unwin
 	if !quiet && to > s.BlockNumber+16 {
 		log.Info(fmt.Sprintf("[%s] Generating intermediate hashes", logPrefix), "from", s.BlockNumber, "to", to)
 	}
-
-	var root libcommon.Hash
 
 	shouldRegenerate := to > s.BlockNumber && to-s.BlockNumber > cfg.zk.RebuildTreeAfter
 

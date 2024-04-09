@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
 	"github.com/ledgerwatch/erigon/ethdb"
 	"github.com/ledgerwatch/erigon/ethdb/olddb"
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
@@ -26,7 +26,7 @@ type SmtDbTx interface {
 }
 
 const TableSmt = "HermezSmt"
-const TableLastRoot = "HermezSmtLastRoot"
+const TableStats = "HermezSmtStats"
 const TableAccountValues = "HermezSmtAccountValues"
 const TableMetadata = "HermezSmtMetadata"
 const TableHashKey = "HermezSmtHashKey"
@@ -42,7 +42,7 @@ func CreateEriDbBuckets(tx kv.RwTx) error {
 		return err
 	}
 
-	err = tx.CreateBucket(TableLastRoot)
+	err = tx.CreateBucket(TableStats)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func (m *EriDb) RollbackBatch() {
 }
 
 func (m *EriDb) GetLastRoot() (*big.Int, error) {
-	data, err := m.tx.GetOne(TableLastRoot, []byte("lastRoot"))
+	data, err := m.tx.GetOne(TableStats, []byte("lastRoot"))
 	if err != nil {
 		return big.NewInt(0), err
 	}
@@ -117,7 +117,24 @@ func (m *EriDb) GetLastRoot() (*big.Int, error) {
 
 func (m *EriDb) SetLastRoot(r *big.Int) error {
 	v := utils.ConvertBigIntToHex(r)
-	return m.tx.Put(TableLastRoot, []byte("lastRoot"), []byte(v))
+	return m.tx.Put(TableStats, []byte("lastRoot"), []byte(v))
+}
+
+func (m *EriDb) GetDepth() (uint8, error) {
+	data, err := m.tx.GetOne(TableStats, []byte("depth"))
+	if err != nil {
+		return 0, err
+	}
+
+	if data == nil {
+		return 0, nil
+	}
+
+	return data[0], nil
+}
+
+func (m *EriDb) SetDepth(depth uint8) error {
+	return m.tx.Put(TableStats, []byte("lastRoot"), []byte{depth})
 }
 
 func (m *EriDb) Get(key utils.NodeKey) (utils.NodeValue12, error) {

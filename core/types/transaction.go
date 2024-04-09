@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	types2 "github.com/ledgerwatch/erigon-lib/types"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
+	types2 "github.com/gateway-fm/cdk-erigon-lib/types"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/protolambda/ztyp/codec"
 
@@ -540,6 +540,10 @@ func (m *Message) SetEffectiveGasPricePercentage(effectiveGasPricePercentage uin
 
 func (m *Message) SetGasPrice(gasPrice *uint256.Int) {
 	m.gasPrice.Set(gasPrice)
+}
+
+func (m *Message) SetFeeCap(feeCap *uint256.Int) {
+	m.feeCap.Set(feeCap)
 }
 
 func (m Message) EffectiveGasPricePercentage() uint8 { return m.effectiveGasPricePercentage }

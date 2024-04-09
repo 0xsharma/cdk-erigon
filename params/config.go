@@ -23,11 +23,12 @@ import (
 	"math/big"
 	"path"
 
-	erigonchain "github.com/ledgerwatch/erigon-lib/chain"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	erigonchain "github.com/gateway-fm/cdk-erigon-lib/chain"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/ledgerwatch/erigon/chain"
 	"github.com/ledgerwatch/erigon/common/paths"
 	"github.com/ledgerwatch/erigon/params/networkname"
+	"os"
 )
 
 //go:embed chainspecs
@@ -62,10 +63,11 @@ var (
 	HermezMainnetGenesisHash           = libcommon.HexToHash("0x81005434635456a16f74ff7023fbe0bf423abbc8a8deb093ffff455c0ad3b741")
 	HermezMainnetShadowforkGenesisHash = libcommon.HexToHash("0xe54709058a084845156393707161a7b3347859b1796167ca014354841f68373c")
 	HermezLocalDevnetGenesisHash       = libcommon.HexToHash("0x433043a1b0948d109cd92a6b7e0e5a3f011c761d70eebe3135ec8f7a39815a65")
+	HermezESTestGenesisHash            = libcommon.HexToHash("0x8c630b598fab24a99b59cdd8257f41b35d0aca992f13cd381c7591f5e89eec58")
 	HermezCardonaGenesisHash           = libcommon.HexToHash("0x676c1a76a6c5855a32bdf7c61977a0d1510088a4eeac1330466453b3d08b60b9")
 	HermezCardonaInternalGenesisHash   = libcommon.HexToHash("0x7311011ce6ab98ef0a15e44fe29f7680909588322534d1736361daa678543038")
-	X1TestnetGenesisHash               = libcommon.HexToHash("0x0ffb92e130f1acaabd8b12aa1bb409b46561ef7568cb8aa7eb8d102a6ab76566")
-	HermezEtrogGenesisHash             = libcommon.HexToHash("0xccfed260e3ef666b058dcd577551de8e00c743c47774a39ca7dbcd9214ba370a")
+	X1TestnetGenesisHash               = libcommon.HexToHash("0x22a8085892b367833bd7431fa5a90ff6b5d3769167cdaa29ce8571d07bc8f866")
+	HermezEtrogGenesisHash             = libcommon.HexToHash("0x5e14aefe391fafa040ee0a0fff6afbc1c230853b9684afb9363f3af081db0192")
 )
 
 var (
@@ -143,11 +145,13 @@ var (
 
 	HermezLocalDevnetChainConfig = readChainSpec("chainspecs/hermez-dev.json")
 
+	HermezESTestChainConfig = readChainSpec("chainspecs/hermez-estest.json")
+
 	HermezEtrogChainConfig = readChainSpec("chainspecs/hermez-etrog.json")
 
 	HermezCardonaChainConfig = readChainSpec("chainspecs/hermez-cardona.json")
 
-	HermezCardonaInternalChainConfig = readChainSpec("chainspecs/hermez-cardona-internal.json")
+	HermezBaliChainConfig = readChainSpec("chainspecs/hermez-bali.json")
 
 	X1TestnetChainConfig = readChainSpec("chainspecs/x1-testnet.json")
 
@@ -197,6 +201,29 @@ type ConsensusSnapshotConfig struct {
 
 const cliquePath = "clique"
 
+func DynamicChainConfig(ch string) *chain.Config {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+
+	basePath := path.Join(homeDir, "dynamic-configs")
+	filename := path.Join(basePath, ch+"-chainspec.json")
+
+	f, err := os.Open(filename)
+	if err != nil {
+		panic(fmt.Sprintf("could not open chainspec for %s: %v", filename, err))
+	}
+	defer f.Close()
+	decoder := json.NewDecoder(f)
+	spec := &chain.Config{}
+	err = decoder.Decode(&spec)
+	if err != nil {
+		panic(fmt.Sprintf("could not parse chainspec for %s: %v", filename, err))
+	}
+	return spec
+}
+
 func NewSnapshotConfig(checkpointInterval uint64, inmemorySnapshots int, inmemorySignatures int, inmemory bool, dbPath string) *ConsensusSnapshotConfig {
 	if len(dbPath) == 0 {
 		dbPath = paths.DefaultDataDir()
@@ -237,16 +264,18 @@ func ChainConfigByChainName(chain string) *chain.Config {
 		return HermezMainnetShadowforkChainConfig
 	case networkname.HermezLocalDevnetChainName:
 		return HermezLocalDevnetChainConfig
+	case networkname.HermezESTestChainName:
+		return HermezESTestChainConfig
 	case networkname.HermezEtrogChainName:
 		return HermezEtrogChainConfig
 	case networkname.HermezCardonaChainName:
 		return HermezCardonaChainConfig
-	case networkname.HermezCardonaInternalChainName:
-		return HermezCardonaInternalChainConfig
+	case networkname.HermezBaliChainName:
+		return HermezBaliChainConfig
 	case networkname.X1TestnetChainName:
 		return X1TestnetChainConfig
 	default:
-		return nil
+		return DynamicChainConfig(chain)
 	}
 }
 
@@ -276,11 +305,13 @@ func GenesisHashByChainName(chain string) *libcommon.Hash {
 		return &HermezMainnetShadowforkGenesisHash
 	case networkname.HermezLocalDevnetChainName:
 		return &HermezLocalDevnetGenesisHash
+	case networkname.HermezESTestChainName:
+		return &HermezESTestGenesisHash
 	case networkname.HermezEtrogChainName:
 		return &HermezEtrogGenesisHash
 	case networkname.HermezCardonaChainName:
 		return &HermezCardonaGenesisHash
-	case networkname.HermezCardonaInternalChainName:
+	case networkname.HermezBaliChainName:
 		return &HermezCardonaInternalGenesisHash
 	case networkname.X1TestnetChainName:
 		return &X1TestnetGenesisHash
@@ -315,12 +346,13 @@ func ChainConfigByGenesisHash(genesisHash libcommon.Hash) *chain.Config {
 		return HermezMainnetShadowforkChainConfig
 	case genesisHash == HermezLocalDevnetGenesisHash:
 		return HermezLocalDevnetChainConfig
+	case genesisHash == HermezESTestGenesisHash:
+		return HermezESTestChainConfig
 	case genesisHash == HermezCardonaGenesisHash:
 		return HermezCardonaChainConfig
 	case genesisHash == HermezCardonaInternalGenesisHash:
-		return HermezCardonaInternalChainConfig
+		return HermezBaliChainConfig
 	default:
-		panic(fmt.Sprintf("Unknown genesis hash: %s", genesisHash.Hex()))
 		return nil
 	}
 }

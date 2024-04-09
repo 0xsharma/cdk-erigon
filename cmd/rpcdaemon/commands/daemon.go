@@ -1,10 +1,10 @@
 package commands
 
 import (
-	"github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
-	libstate "github.com/ledgerwatch/erigon-lib/state"
+	"github.com/gateway-fm/cdk-erigon-lib/gointerfaces/txpool"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/kv/kvcache"
+	libstate "github.com/gateway-fm/cdk-erigon-lib/state"
 
 	"github.com/ledgerwatch/erigon/cmd/rpcdaemon/cli/httpcfg"
 	"github.com/ledgerwatch/erigon/consensus"
@@ -13,6 +13,7 @@ import (
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
 	"github.com/ledgerwatch/erigon/turbo/services"
 	"github.com/ledgerwatch/erigon/zk/syncer"
+	"github.com/ledgerwatch/erigon/zk/sequencer"
 )
 
 // APIList describes the list of available RPC apis
@@ -21,11 +22,18 @@ func APIList(db kv.RoDB, borDb kv.RoDB, eth rpchelper.ApiBackend, txPool txpool.
 	blockReader services.FullBlockReader, agg *libstate.AggregatorV3, cfg httpcfg.HttpCfg, engine consensus.EngineReader,
 	zkConfig *ethconfig.Zk, l1Syncer *syncer.L1Syncer,
 ) (list []rpc.API) {
+
+	// non-sequencer nodes should forward on requests to the sequencer
+	rpcUrl := ""
+	if !sequencer.IsSequencer() {
+		rpcUrl = zkConfig.L2RpcUrl
+	}
+
 	base := NewBaseApi(filters, stateCache, blockReader, agg, cfg.WithDatadir, cfg.EvmCallTimeout, engine, cfg.Dirs)
 	base.SetL2RpcUrl(zkConfig.L2RpcUrl)
 	ethImpl := NewEthAPI(base, db, eth, txPool, mining, cfg.Gascap, cfg.ReturnDataLimit, zkConfig)
 	erigonImpl := NewErigonAPI(base, db, eth)
-	txpoolImpl := NewTxPoolAPI(base, db, txPool)
+	txpoolImpl := NewTxPoolAPI(base, db, txPool, rpcUrl)
 	netImpl := NewNetAPIImpl(eth)
 	debugImpl := NewPrivateDebugAPI(base, db, cfg.Gascap)
 	traceImpl := NewTraceAPI(base, db, &cfg)

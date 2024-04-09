@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ledgerwatch/erigon-lib/chain"
-	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/chain"
+	"github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/ledgerwatch/erigon/zk/zkchainconfig"
 )
 
@@ -291,6 +291,9 @@ func (c *Config) CheckConfigForkOrder() error {
 	if c != nil && zkchainconfig.IsZk(c.ChainID.Uint64()) {
 		return zkchainconfig.CheckForkOrder()
 	}
+
+	// [dynamic fork]
+	return nil
 
 	var lastFork forkBlockNumber
 

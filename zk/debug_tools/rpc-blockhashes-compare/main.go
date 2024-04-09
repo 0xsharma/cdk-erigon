@@ -81,7 +81,7 @@ func main() {
 		return
 	}
 
-	debug_tools.CompareBlocks(ctx, blockRemote, blockLocal, rpcClientLocal, rpcClientRemote)
+	debug_tools.CompareBlocks(ctx, false, blockRemote, blockLocal, rpcClientLocal, rpcClientRemote)
 
 	log.Warn("Check finished!")
 }

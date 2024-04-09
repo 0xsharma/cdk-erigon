@@ -19,7 +19,7 @@ package core
 import (
 	"math/big"
 
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 
 	"github.com/ledgerwatch/erigon/chain"
 
@@ -48,6 +48,7 @@ func applyTransaction_zkevm(config *chain.Config, engine consensus.EngineReader,
 	// apply effective gas percentage here, so it is actual for all further calculations
 	if evm.ChainRules().IsForkID5Dragonfruit {
 		msg.SetGasPrice(CalculateEffectiveGas(msg.GasPrice(), effectiveGasPricePercentage))
+		msg.SetFeeCap(CalculateEffectiveGas(msg.FeeCap(), effectiveGasPricePercentage))
 	}
 
 	if msg.FeeCap().IsZero() && engine != nil {
@@ -118,15 +119,29 @@ func applyTransaction_zkevm(config *chain.Config, engine consensus.EngineReader,
 // and uses the input parameters for its environment. It returns the receipt
 // for the transaction, gas used and an error if the transaction failed,
 // indicating the block was invalid.
-func ApplyTransaction_zkevm(config *chain.Config, blockHashFunc func(n uint64) libcommon.Hash, engine consensus.EngineReader, author *libcommon.Address, gp *GasPool, ibs *state.IntraBlockState, stateWriter state.StateWriter, header *types.Header, tx types.Transaction, usedGas *uint64, cfg vm.Config, excessDataGas *big.Int, effectiveGasPricePercentage uint8) (*types.Receipt, *ExecutionResult, error) {
+func ApplyTransaction_zkevm(
+	config *chain.Config,
+	blockHashFunc func(n uint64) libcommon.Hash,
+	engine consensus.EngineReader,
+	author *libcommon.Address,
+	gp *GasPool,
+	ibs *state.IntraBlockState,
+	stateWriter state.StateWriter,
+	header *types.Header,
+	tx types.Transaction,
+	usedGas *uint64,
+	cfg vm.ZkConfig,
+	excessDataGas *big.Int,
+	effectiveGasPricePercentage uint8,
+) (*types.Receipt, *ExecutionResult, error) {
 	// Create a new context to be used in the EVM environment
 
 	// Add addresses to access list if applicable
 	// about the transaction and calling mechanisms.
-	cfg.SkipAnalysis = SkipAnalysis(config, header.Number.Uint64())
+	cfg.Config.SkipAnalysis = SkipAnalysis(config, header.Number.Uint64())
 
 	blockContext := NewEVMBlockContext(header, blockHashFunc, engine, author, excessDataGas)
-	vmenv := vm.NewEVM(blockContext, evmtypes.TxContext{}, ibs, config, cfg)
+	vmenv := vm.NewZkEVM(blockContext, evmtypes.TxContext{}, ibs, config, cfg)
 
-	return applyTransaction_zkevm(config, engine, gp, ibs, stateWriter, header, tx, usedGas, vmenv, cfg, effectiveGasPricePercentage)
+	return applyTransaction_zkevm(config, engine, gp, ibs, stateWriter, header, tx, usedGas, vmenv, cfg.Config, effectiveGasPricePercentage)
 }

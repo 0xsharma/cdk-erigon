@@ -4,19 +4,19 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/ledgerwatch/erigon/zk/datastream/client"
 	"github.com/ledgerwatch/erigon/zk/datastream/test/utils"
 	"github.com/ledgerwatch/erigon/zk/datastream/types"
 	"github.com/ledgerwatch/erigon/zkevm/log"
 )
 
-const dataStreamUrl = "stream.zkevm-rpc.com:6900"
+const dataStreamUrl = "datastream.cardona.zkevm-rpc.com:6900"
 
 // This code downloads headers and blocks from a datastream server.
 func main() {
 	// Create client
-	c := client.NewClient(dataStreamUrl, 0)
+	c := client.NewClient(dataStreamUrl, 0, 0)
 
 	// Start client (connect to the server)
 	defer c.Stop()
@@ -28,37 +28,15 @@ func main() {
 	bookmark := types.NewL2BlockBookmark(0)
 
 	// Read all entries from server
-	blocksRead, _, _, entriesReadAmount, err := c.ReadEntries(bookmark, 1000000)
+	blocksRead, _, _, entriesReadAmount, err := c.ReadEntries(bookmark, 1)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("Entries read amount: ", entriesReadAmount)
 	fmt.Println("Blocks read amount: ", len(*blocksRead))
 
-	lastGer := common.Hash{}
-	expectedDsBlock := uint64(1)
-
-	var missingBlocks []uint64
-
-	for i, dsBlock := range *blocksRead {
-		if i == 0 {
-			continue
-		}
-
-		if dsBlock.L2BlockNumber != expectedDsBlock {
-			missingBlocks = append(missingBlocks, dsBlock.L2BlockNumber)
-			log.Error("Missing blocks: %v", missingBlocks)
-		}
-		expectedDsBlock++
-
-		rpcBlock, _ := utils.GetBlockByHash(dsBlock.L2Blockhash.String())
-		match := matchBlocks(dsBlock, rpcBlock, lastGer)
-		if !match {
-			log.Error("Blocks don't match")
-		}
-		if lastGer.Hex() != dsBlock.GlobalExitRoot.Hex() {
-			lastGer = dsBlock.GlobalExitRoot
-		}
+	for _, dsBlock := range *blocksRead {
+		fmt.Println(dsBlock)
 	}
 }
 

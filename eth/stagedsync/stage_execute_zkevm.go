@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/c2h5oh/datasize"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/cmp"
-	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/gateway-fm/cdk-erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common/cmp"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/core"
@@ -17,6 +17,8 @@ import (
 	"github.com/ledgerwatch/erigon/zk/hermez_db"
 
 	"math/big"
+
+	"os"
 
 	"github.com/ledgerwatch/erigon/chain"
 	"github.com/ledgerwatch/erigon/common/math"
@@ -42,6 +44,18 @@ func SpawnExecuteBlocksStageZk(s *StageState, u Unwinder, tx kv.RwTx, toBlock ui
 		return nil
 	}
 
+	///// DEBUG BISECT /////
+	highestBlockExecuted := s.BlockNumber
+	defer func() {
+		if cfg.zk.DebugLimit > 0 {
+			if err != nil {
+				log.Error("Execution Failed", "err", err, "block", highestBlockExecuted)
+				os.Exit(2)
+			}
+		}
+	}()
+	///// DEBUG BISECT /////
+
 	quit := ctx.Done()
 	useExternalTx := tx != nil
 	if !useExternalTx {
@@ -56,7 +70,7 @@ func SpawnExecuteBlocksStageZk(s *StageState, u Unwinder, tx kv.RwTx, toBlock ui
 	if err != nil {
 		return err
 	}
-	if shouldShortCircuit {
+	if shouldShortCircuit && cfg.zk.DebugLimit == 0 {
 		return nil
 	}
 
@@ -131,8 +145,14 @@ func SpawnExecuteBlocksStageZk(s *StageState, u Unwinder, tx kv.RwTx, toBlock ui
 	if err != nil {
 		return err
 	}
+
+	if err := UpdateZkEVMBlockCfg(cfg.chainConfig, hermezDb, logPrefix); err != nil {
+		return err
+	}
+
 	prevBlockRoot := header.Root
 	prevBlockHash := prevheaderHash
+
 Loop:
 	for blockNum := stageProgress + 1; blockNum <= to; blockNum++ {
 		stageProgress = blockNum
@@ -147,15 +167,12 @@ Loop:
 			return err
 		}
 
-		//TODO: SHOULD RETURN ERR?
 		if block == nil {
-			log.Error(fmt.Sprintf("[%s] Empty block", logPrefix), "blocknum", blockNum)
-			continue
+			return fmt.Errorf("[%s] Empty block blocknum: %d", logPrefix, blockNum)
 		}
 
 		if header == nil {
-			log.Error(fmt.Sprintf("[%s] Empty header", logPrefix), "blocknum", blockNum)
-			continue
+			return fmt.Errorf("[%s] Empty header blocknum: %d", logPrefix, blockNum)
 		}
 
 		lastLogTx += uint64(block.Transactions().Len())
@@ -164,11 +181,9 @@ Loop:
 		writeChangeSets := nextStagesExpectData || blockNum > cfg.prune.History.PruneTo(to)
 		writeReceipts := nextStagesExpectData || blockNum > cfg.prune.Receipts.PruneTo(to)
 		writeCallTraces := nextStagesExpectData || blockNum > cfg.prune.CallTraces.PruneTo(to)
-		if err = updateZkEVMBlockCfg(&cfg, hermezDb, logPrefix); err != nil {
-			return err
-		}
+
 		header.ParentHash = prevBlockHash
-		if err = executeBlockZk(block, &prevBlockRoot, header, tx, batch, cfg, *cfg.vmConfig, writeChangeSets, writeReceipts, writeCallTraces, initialCycle, stateStream, hermezDb); err != nil {
+		if err := executeBlockZk(block, &prevBlockRoot, header, tx, batch, cfg, *cfg.vmConfig, writeChangeSets, writeReceipts, writeCallTraces, initialCycle, stateStream, hermezDb); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Warn(fmt.Sprintf("[%s] Execution failed", logPrefix), "block", blockNum, "hash", block.Hash().String(), "err", err)
 				if cfg.hd != nil {
@@ -187,10 +202,10 @@ Loop:
 		if shouldUpdateProgress {
 			log.Info("Committed State", "gas reached", currentStateGas, "gasTarget", gasState)
 			currentStateGas = 0
-			if err = batch.Commit(); err != nil {
+			if err = s.Update(batch, stageProgress); err != nil {
 				return err
 			}
-			if err = s.Update(tx, stageProgress); err != nil {
+			if err = batch.Commit(); err != nil {
 				return err
 			}
 			if !useExternalTx {
@@ -259,7 +274,8 @@ Loop:
 	if !quiet {
 		log.Info(fmt.Sprintf("[%s] Completed on", logPrefix), "block", stageProgress)
 	}
-	return stoppedErr
+	err = stoppedErr
+	return err
 }
 
 func getPreexecuteValues(cfg ExecuteBlockCfg, ctx context.Context, tx kv.RwTx, blockNum uint64) (common.Hash, *types.Block, *types.Header, []common.Address, error) {
@@ -313,7 +329,9 @@ func postExecuteCommitValues(
 	*/
 	headerHash := header.Hash()
 	blockNum := block.NumberU64()
-	rawdb.WriteHeader(tx, header)
+	if err := rawdb.WriteHeader_zkEvm(tx, header); err != nil {
+		return fmt.Errorf("failed to write header: %v", err)
+	}
 
 	if err := rawdb.WriteCanonicalHash(tx, headerHash, blockNum); err != nil {
 		return fmt.Errorf("failed to write header: %v", err)
@@ -339,7 +357,9 @@ func postExecuteCommitValues(
 	}
 
 	// write the new block lookup entries
-	rawdb.WriteTxLookupEntries(tx, block)
+	if err := rawdb.WriteTxLookupEntries_zkEvm(tx, block); err != nil {
+		return fmt.Errorf("failed to write tx lookup entries: %v", err)
+	}
 
 	return nil
 }
@@ -381,28 +401,23 @@ func executeBlockZk(
 	vmConfig.Debug = true
 	vmConfig.Tracer = callTracer
 
-	var receipts types.Receipts
-	var stateSyncReceipt *types.Receipt
-	var execRs *core.EphemeralExecResult
 	getHashFn := core.GetHashFn(block.Header(), getHeader)
-
-	execRs, err = core.ExecuteBlockEphemerallyZk(cfg.chainConfig, &vmConfig, getHashFn, cfg.engine, prevBlockRoot, block, stateReader, stateWriter, ChainReaderImpl{config: cfg.chainConfig, tx: tx, blockReader: cfg.blockReader}, getTracer, tx, roHermezDb)
-
+	execRs, err := core.ExecuteBlockEphemerallyZk(cfg.chainConfig, &vmConfig, getHashFn, cfg.engine, prevBlockRoot, block, stateReader, stateWriter, ChainReaderImpl{config: cfg.chainConfig, tx: tx, blockReader: cfg.blockReader}, getTracer, tx, roHermezDb)
 	if err != nil {
 		return err
 	}
-	receipts = execRs.Receipts
-	stateSyncReceipt = execRs.StateSyncReceipt
+	receipts := execRs.Receipts
 
 	header.GasUsed = uint64(execRs.GasUsed)
 	header.ReceiptHash = types.DeriveSha(receipts)
 	header.Bloom = execRs.Bloom
 
 	if writeReceipts {
-		if err = rawdb.AppendReceipts(tx, blockNum, receipts); err != nil {
+		if err := rawdb.AppendReceipts(tx, blockNum, receipts); err != nil {
 			return err
 		}
 
+		stateSyncReceipt := execRs.StateSyncReceipt
 		if stateSyncReceipt != nil && stateSyncReceipt.Status == types.ReceiptStatusSuccessful {
 			if err := rawdb.WriteBorReceipt(tx, block.Hash(), block.NumberU64(), stateSyncReceipt); err != nil {
 				return err
@@ -516,7 +531,11 @@ func PruneExecutionStageZk(s *PruneState, tx kv.RwTx, cfg ExecuteBlockCfg, ctx c
 	return nil
 }
 
-func updateZkEVMBlockCfg(cfg *ExecuteBlockCfg, hermezDb *hermez_db.HermezDb, logPrefix string) error {
+type ForkReader interface {
+	GetForkIdBlock(forkId uint64) (uint64, error)
+}
+
+func UpdateZkEVMBlockCfg(cfg *chain.Config, hermezDb ForkReader, logPrefix string) error {
 	update := func(forkId uint64, forkBlock **big.Int) error {
 		if *forkBlock != nil && *forkBlock != big.NewInt(0) {
 			return nil
@@ -534,16 +553,16 @@ func updateZkEVMBlockCfg(cfg *ExecuteBlockCfg, hermezDb *hermez_db.HermezDb, log
 		return nil
 	}
 
-	if err := update(chain.ForkID5Dragonfruit, &cfg.chainConfig.ForkID5DragonfruitBlock); err != nil {
+	if err := update(chain.ForkID5Dragonfruit, &cfg.ForkID5DragonfruitBlock); err != nil {
 		return err
 	}
-	if err := update(chain.ForkID6IncaBerry, &cfg.chainConfig.ForkID6IncaBerryBlock); err != nil {
+	if err := update(chain.ForkID6IncaBerry, &cfg.ForkID6IncaBerryBlock); err != nil {
 		return err
 	}
-	if err := update(chain.ForkID7Etrog, &cfg.chainConfig.ForkID7EtrogBlock); err != nil {
+	if err := update(chain.ForkID7Etrog, &cfg.ForkID7EtrogBlock); err != nil {
 		return err
 	}
-	if err := update(chain.ForkID88Elderberry, &cfg.chainConfig.ForkID88ElderberryBlock); err != nil {
+	if err := update(chain.ForkID88Elderberry, &cfg.ForkID88ElderberryBlock); err != nil {
 		return err
 	}
 	return nil

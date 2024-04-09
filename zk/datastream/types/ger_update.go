@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common"
 )
 
 const (
@@ -24,6 +24,17 @@ type GerUpdate struct {
 	ForkId         uint16         // 2 bytes
 	ChainId        uint32         // 4 bytes
 	StateRoot      common.Hash    // 32 bytes
+}
+
+func (g *GerUpdate) EntryType() EntryType {
+	return EntryTypeGerUpdate
+}
+
+func (g *GerUpdate) Bytes(bigEndian bool) []byte {
+	if bigEndian {
+		return g.EncodeToBytesBigEndian()
+	}
+	return g.EncodeToBytes()
 }
 
 func (g *GerUpdate) EncodeToBytes() []byte {

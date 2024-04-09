@@ -15,16 +15,15 @@ import (
 
 	"github.com/VictoriaMetrics/metrics"
 	"github.com/c2h5oh/datasize"
-	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/datadir"
-	"github.com/ledgerwatch/erigon-lib/common/dbg"
-	"github.com/ledgerwatch/erigon-lib/common/dir"
-	"github.com/ledgerwatch/erigon-lib/etl"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	kv2 "github.com/ledgerwatch/erigon-lib/kv/mdbx"
-	"github.com/ledgerwatch/erigon-lib/kv/rawdbv3"
-	libstate "github.com/ledgerwatch/erigon-lib/state"
-	state2 "github.com/ledgerwatch/erigon-lib/state"
+	"github.com/gateway-fm/cdk-erigon-lib/common"
+	"github.com/gateway-fm/cdk-erigon-lib/common/datadir"
+	"github.com/gateway-fm/cdk-erigon-lib/common/dbg"
+	"github.com/gateway-fm/cdk-erigon-lib/common/dir"
+	"github.com/gateway-fm/cdk-erigon-lib/etl"
+	"github.com/gateway-fm/cdk-erigon-lib/kv"
+	kv2 "github.com/gateway-fm/cdk-erigon-lib/kv/mdbx"
+	"github.com/gateway-fm/cdk-erigon-lib/kv/rawdbv3"
+	libstate "github.com/gateway-fm/cdk-erigon-lib/state"
 	"github.com/ledgerwatch/erigon/chain"
 	"github.com/ledgerwatch/erigon/common/math"
 	"github.com/ledgerwatch/log/v3"
@@ -718,7 +717,7 @@ func blockWithSenders(db kv.RoDB, tx kv.Tx, blockReader services.BlockReader, bl
 	return b, nil
 }
 
-func processResultQueue(in *exec22.QueueWithRetry, rws *exec22.ResultsQueueIter, outputTxNumIn uint64, rs *state.StateV3, agg *state2.AggregatorV3, applyTx kv.Tx, backPressure chan struct{}, applyWorker *exec3.Worker, canRetry, forceStopAtBlockEnd bool) (outputTxNum uint64, conflicts, triggers int, processedBlockNum uint64, stopedAtBlockEnd bool, err error) {
+func processResultQueue(in *exec22.QueueWithRetry, rws *exec22.ResultsQueueIter, outputTxNumIn uint64, rs *state.StateV3, agg *libstate.AggregatorV3, applyTx kv.Tx, backPressure chan struct{}, applyWorker *exec3.Worker, canRetry, forceStopAtBlockEnd bool) (outputTxNum uint64, conflicts, triggers int, processedBlockNum uint64, stopedAtBlockEnd bool, err error) {
 	var i int
 	outputTxNum = outputTxNumIn
 	for rws.HasNext(outputTxNum) {
@@ -999,7 +998,7 @@ func reconstituteStep(last bool,
 				return err
 			}
 			if b == nil {
-				return fmt.Errorf("could not find block %d\n", bn)
+				return fmt.Errorf("could not find block %d", bn)
 			}
 			txs := b.Transactions()
 			header := b.HeaderNoCopy()
@@ -1289,7 +1288,7 @@ func safeCloseTxTaskCh(ch chan *exec22.TxTask) {
 
 func ReconstituteState(ctx context.Context, s *StageState, dirs datadir.Dirs, workerCount int, batchSize datasize.ByteSize, chainDb kv.RwDB,
 	blockReader services.FullBlockReader,
-	logger log.Logger, agg *state2.AggregatorV3, engine consensus.Engine,
+	logger log.Logger, agg *libstate.AggregatorV3, engine consensus.Engine,
 	chainConfig *chain.Config, genesis *types.Genesis) (err error) {
 	startTime := time.Now()
 	defer agg.EnableMadvNormal().DisableReadAhead()
