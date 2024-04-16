@@ -116,7 +116,6 @@ func TestWitnessToSMT(t *testing.T) {
 	}
 
 	root, err := newSMT.Db.GetLastRoot()
-
 	if err != nil {
 		t.Errorf("error getting last root: %v", err)
 	}
@@ -127,7 +126,6 @@ func TestWitnessToSMT(t *testing.T) {
 	// })
 
 	expectedRoot, err := smtTrie.Db.GetLastRoot()
-
 	if err != nil {
 		t.Errorf("error getting last root: %v", err)
 	}
@@ -135,6 +133,41 @@ func TestWitnessToSMT(t *testing.T) {
 	if expectedRoot.Cmp(root) != 0 {
 		t.Errorf(fmt.Sprintf("SMT root mismatch, expected %x, got %x", expectedRoot.Bytes(), root.Bytes()))
 	}
+}
+
+func TestWitnessToSMTStateReader(t *testing.T) {
+	smtTrie, rl := prepareSMT(t)
+
+	expectedRoot, err := smtTrie.Db.GetLastRoot()
+	if err != nil {
+		t.Errorf("error getting last root: %v", err)
+	}
+
+	witness, err := smt.BuildWitness(smtTrie, rl, context.Background())
+	if err != nil {
+		t.Errorf("error building witness: %v", err)
+	}
+
+	newSMT, err := smt.BuildSMTfromWitness(witness)
+	if err != nil {
+		t.Errorf("error building SMT from witness: %v", err)
+	}
+	root, err := newSMT.Db.GetLastRoot()
+	if err != nil {
+		t.Errorf("error building SMT from witness: %v", err)
+	}
+
+	if expectedRoot.Cmp(root) != 0 {
+		t.Errorf(fmt.Sprintf("SMT root mismatch, expected %x, got %x", expectedRoot.Bytes(), root.Bytes()))
+	}
+
+	contract := libcommon.HexToAddress("0x71dd1027069078091B3ca48093B00E4735B20624")
+
+	expectedAcc, _ := smtTrie.ReadAccountData(contract)
+	newAcc, _ := newSMT.ReadAccountData(contract)
+
+	fmt.Printf("expectedAcc : %+v\n", expectedAcc)
+	fmt.Printf("newAcc      : %+v\n", newAcc)
 }
 
 func TestSMTWitnessRetainList(t *testing.T) {
