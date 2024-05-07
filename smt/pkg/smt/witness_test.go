@@ -138,6 +138,8 @@ func TestWitnessToSMT(t *testing.T) {
 func TestWitnessToSMTStateReader(t *testing.T) {
 	smtTrie, rl := prepareSMT(t)
 
+	testStorageKey := libcommon.HexToHash("0x5")
+
 	expectedRoot, err := smtTrie.Db.GetLastRoot()
 	if err != nil {
 		t.Errorf("error getting last root: %v", err)
@@ -166,8 +168,22 @@ func TestWitnessToSMTStateReader(t *testing.T) {
 	expectedAcc, _ := smtTrie.ReadAccountData(contract)
 	newAcc, _ := newSMT.ReadAccountData(contract)
 
+	expectedAccStorage, _ := smtTrie.ReadAccountStorage(contract, 0, &testStorageKey)
+	newAccStorage, _ := newSMT.ReadAccountStorage(contract, 0, &testStorageKey)
+	expectedAccCode, _ := smtTrie.ReadAccountCode(contract, 0, expectedAcc.CodeHash)
+	newAccCode, _ := newSMT.ReadAccountCode(contract, 0, newAcc.CodeHash)
+	expectedAccCodeSize, _ := smtTrie.ReadAccountCodeSize(contract, 0, expectedAcc.CodeHash)
+	newAccCodeSize, _ := newSMT.ReadAccountCodeSize(contract, 0, newAcc.CodeHash)
+
 	fmt.Printf("expectedAcc : %+v\n", expectedAcc)
 	fmt.Printf("newAcc      : %+v\n", newAcc)
+
+	fmt.Printf("expectedAccStorage : %+v\n", expectedAccStorage)
+	fmt.Printf("newAccStorage      : %+v\n", newAccStorage)
+	fmt.Printf("expectedAccCode : %+v\n", expectedAccCode)
+	fmt.Printf("newAccCode      : %+v\n", newAccCode)
+	fmt.Printf("expectedAccCodeSize : %+v\n", expectedAccCodeSize)
+	fmt.Printf("newAccCodeSize      : %+v\n", newAccCodeSize)
 }
 
 func TestSMTWitnessRetainList(t *testing.T) {

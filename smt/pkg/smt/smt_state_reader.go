@@ -2,12 +2,14 @@ package smt
 
 import (
 	"context"
+	"math/big"
 
 	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
 	"github.com/ledgerwatch/erigon/turbo/trie"
+	"github.com/ledgerwatch/erigon/zkevm/log"
 )
 
 func (s *SMT) ReadAccountData(address libcommon.Address) (*accounts.Account, error) {
@@ -31,13 +33,35 @@ func (s *SMT) ReadAccountData(address libcommon.Address) (*accounts.Account, err
 	}
 	account.CodeHash = codeHash
 
-	storageRoot, err := s.GetAccountStorageRoot(address)
-	if err != nil {
-		return nil, err
-	}
-	account.Root = storageRoot
-
 	return &account, nil
+}
+
+func (s *SMT) ReadAccountStorage(address libcommon.Address, incarnation uint64, key *libcommon.Hash) ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (s *SMT) ReadAccountCode(address libcommon.Address, incarnation uint64, codeHash libcommon.Hash) ([]byte, error) {
+	code, err := s.Db.GetCode(codeHash.Bytes())
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return code, nil
+}
+
+func (s *SMT) ReadAccountCodeSize(address libcommon.Address, incarnation uint64, codeHash libcommon.Hash) (int, error) {
+	valueInBytes, err := s.getValueInBytes(utils.SC_LENGTH, address)
+	if err != nil {
+		return 0, err
+	}
+
+	sizeBig := big.NewInt(0).SetBytes(valueInBytes)
+
+	return int(sizeBig.Int64()), nil
+}
+
+func (s *SMT) ReadAccountIncarnation(address libcommon.Address) (uint64, error) {
+	return 0, nil
 }
 
 func (s *SMT) GetAccountBalance(address libcommon.Address) (*uint256.Int, error) {
@@ -45,6 +69,7 @@ func (s *SMT) GetAccountBalance(address libcommon.Address) (*uint256.Int, error)
 
 	valueInBytes, err := s.getValueInBytes(utils.KEY_BALANCE, address)
 	if err != nil {
+		log.Error("error getting balance", "error", err)
 		return nil, err
 	}
 	balance.SetBytes(valueInBytes)
@@ -57,6 +82,7 @@ func (s *SMT) GetAccountNonce(address libcommon.Address) (*uint256.Int, error) {
 
 	valueInBytes, err := s.getValueInBytes(utils.KEY_NONCE, address)
 	if err != nil {
+		log.Error("error getting nonce", "error", err)
 		return nil, err
 	}
 	nonce.SetBytes(valueInBytes)
@@ -69,6 +95,7 @@ func (s *SMT) GetAccountCodeHash(address libcommon.Address) (libcommon.Hash, err
 
 	valueInBytes, err := s.getValueInBytes(utils.SC_CODE, address)
 	if err != nil {
+		log.Error("error getting codehash", "error", err)
 		return libcommon.Hash{}, err
 	}
 	codeHash.SetBytes(valueInBytes)

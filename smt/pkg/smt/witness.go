@@ -167,6 +167,7 @@ func BuildSMTfromWitness(w *trie.Witness) (*SMT, error) {
 
 			code := hexutils.BytesToHex(op.Code)
 			if len(code) > 0 {
+				s.Db.AddCode(hexutils.HexToBytes(code))
 				code = fmt.Sprintf("0x%s", code)
 			}
 
