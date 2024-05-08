@@ -15,7 +15,6 @@ import (
 	"github.com/ledgerwatch/erigon/turbo/engineapi"
 	"github.com/ledgerwatch/erigon/turbo/shards"
 	"github.com/ledgerwatch/erigon/turbo/snapshotsync"
-	"github.com/ledgerwatch/erigon/zk/datastream/client"
 	"github.com/ledgerwatch/erigon/zk/legacy_executor_verifier"
 	zkStages "github.com/ledgerwatch/erigon/zk/stages"
 	"github.com/ledgerwatch/erigon/zk/syncer"
@@ -34,7 +33,7 @@ func NewDefaultZkStages(ctx context.Context,
 	forkValidator *engineapi.ForkValidator,
 	engine consensus.Engine,
 	l1Syncer *syncer.L1Syncer,
-	datastreamClient *client.StreamClient,
+	datastreamClient zkStages.DatastreamClient,
 	datastreamServer *datastreamer.StreamServer,
 ) []*stagedsync.Stage {
 	dirs := cfg.Dirs
@@ -48,7 +47,7 @@ func NewDefaultZkStages(ctx context.Context,
 	return zkStages.DefaultZkStages(ctx,
 		zkStages.StageL1SyncerCfg(db, l1Syncer, cfg.Zk),
 		zkStages.StageBatchesCfg(db, datastreamClient, cfg.Zk),
-		zkStages.StageDataStreamCatchupCfg(datastreamServer, db, cfg.Genesis.Config.ChainID.Uint64(), zkStages.NodeTypeSynchronizer),
+		zkStages.StageDataStreamCatchupCfg(datastreamServer, db, cfg.Genesis.Config.ChainID.Uint64()),
 		stagedsync.StageCumulativeIndexCfg(db),
 		stagedsync.StageBlockHashesCfg(db, dirs.Tmp, controlServer.ChainConfig),
 		stagedsync.StageSendersCfg(db, controlServer.ChainConfig, false, dirs.Tmp, cfg.Prune, blockRetire, controlServer.Hd),
@@ -95,6 +94,7 @@ func NewSequencerZkStages(ctx context.Context,
 	engine consensus.Engine,
 	datastreamServer *datastreamer.StreamServer,
 	l1Syncer *syncer.L1Syncer,
+	l1BlockSyncer *syncer.L1Syncer,
 	txPool *txpool.TxPool,
 	txPoolDb kv.RwDB,
 	verifier *legacy_executor_verifier.LegacyExecutorVerifier,
@@ -109,8 +109,8 @@ func NewSequencerZkStages(ctx context.Context,
 	return zkStages.SequencerZkStages(ctx,
 		stagedsync.StageCumulativeIndexCfg(db),
 		zkStages.StageL1SequencerSyncCfg(db, cfg.Zk, l1Syncer),
-		zkStages.StageDataStreamCatchupCfg(datastreamServer, db, cfg.Genesis.Config.ChainID.Uint64(), zkStages.NodeTypeSequencer),
-		zkStages.StageSequencerInterhashesCfg(db, notifications.Accumulator),
+		zkStages.StageSequencerL1BlockSyncCfg(db, cfg.Zk, l1BlockSyncer),
+		zkStages.StageDataStreamCatchupCfg(datastreamServer, db, cfg.Genesis.Config.ChainID.Uint64()),
 		zkStages.StageSequenceBlocksCfg(
 			db,
 			cfg.Prune,
@@ -128,6 +128,7 @@ func NewSequencerZkStages(ctx context.Context,
 			cfg.Genesis,
 			cfg.Sync,
 			agg,
+			datastreamServer,
 			cfg.Zk,
 			txPool,
 			txPoolDb,
