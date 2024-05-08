@@ -13,6 +13,7 @@ import (
 	"github.com/ledgerwatch/erigon/zkevm/log"
 )
 
+// ReadAccountData reads account data from the SMT
 func (s *SMT) ReadAccountData(address libcommon.Address) (*accounts.Account, error) {
 	account := accounts.Account{}
 
@@ -39,10 +40,12 @@ func (s *SMT) ReadAccountData(address libcommon.Address) (*accounts.Account, err
 	return &account, nil
 }
 
+// ReadAccountStorage reads account storage from the SMT (not implemented for SMT)
 func (s *SMT) ReadAccountStorage(address libcommon.Address, incarnation uint64, key *libcommon.Hash) ([]byte, error) {
 	return []byte{}, nil
 }
 
+// ReadAccountCode reads account code from the SMT
 func (s *SMT) ReadAccountCode(address libcommon.Address, incarnation uint64, codeHash libcommon.Hash) ([]byte, error) {
 	code, err := s.Db.GetCode(codeHash.Bytes())
 	if err != nil {
@@ -52,6 +55,7 @@ func (s *SMT) ReadAccountCode(address libcommon.Address, incarnation uint64, cod
 	return code, nil
 }
 
+// ReadAccountCodeSize reads account code size from the SMT
 func (s *SMT) ReadAccountCodeSize(address libcommon.Address, incarnation uint64, codeHash libcommon.Hash) (int, error) {
 	valueInBytes, err := s.getValueInBytes(utils.SC_LENGTH, address)
 	if err != nil {
@@ -63,10 +67,12 @@ func (s *SMT) ReadAccountCodeSize(address libcommon.Address, incarnation uint64,
 	return int(sizeBig.Int64()), nil
 }
 
+// ReadAccountIncarnation reads account incarnation from the SMT (not implemented for SMT)
 func (s *SMT) ReadAccountIncarnation(address libcommon.Address) (uint64, error) {
 	return 0, nil
 }
 
+// GetAccountBalance returns the balance of an account from the SMT
 func (s *SMT) GetAccountBalance(address libcommon.Address) (*uint256.Int, error) {
 	balance := uint256.NewInt(0)
 
@@ -80,6 +86,7 @@ func (s *SMT) GetAccountBalance(address libcommon.Address) (*uint256.Int, error)
 	return balance, nil
 }
 
+// GetAccountNonce returns the nonce of an account from the SMT
 func (s *SMT) GetAccountNonce(address libcommon.Address) (*uint256.Int, error) {
 	nonce := uint256.NewInt(0)
 
@@ -93,6 +100,7 @@ func (s *SMT) GetAccountNonce(address libcommon.Address) (*uint256.Int, error) {
 	return nonce, nil
 }
 
+// GetAccountCodeHash returns the code hash of an account from the SMT
 func (s *SMT) GetAccountCodeHash(address libcommon.Address) (libcommon.Hash, error) {
 	codeHash := libcommon.Hash{}
 
@@ -106,6 +114,7 @@ func (s *SMT) GetAccountCodeHash(address libcommon.Address) (libcommon.Hash, err
 	return codeHash, nil
 }
 
+// GetAccountStorageRoot returns the StorageRoot of an account from the SMT (not implemented for SMT)
 func (s *SMT) GetAccountStorageRoot(address libcommon.Address) (libcommon.Hash, error) {
 	storageTrie := trie.New(libcommon.Hash{})
 
@@ -123,6 +132,7 @@ func (s *SMT) GetAccountStorageRoot(address libcommon.Address) (libcommon.Hash, 
 	return rootHash, nil
 }
 
+// getValueInBytes returns the value of a key from SMT in bytes by traversing the SMT
 func (s *SMT) getValueInBytes(key int, address libcommon.Address) ([]byte, error) {
 	value := []byte{}
 
@@ -173,6 +183,7 @@ func (s *SMT) getValueInBytes(key int, address libcommon.Address) ([]byte, error
 	return value, nil
 }
 
+// getStorageMap returns the storage map of an address from the SMT
 func (s *SMT) getStorageMap(address libcommon.Address) (map[libcommon.Hash]libcommon.Hash, error) {
 	storageMap := make(map[libcommon.Hash]libcommon.Hash)
 	action := func(prefix []byte, k utils.NodeKey, v utils.NodeValue12) (bool, error) {

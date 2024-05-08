@@ -16,6 +16,7 @@ import (
 	"github.com/ledgerwatch/erigon/smt/pkg/smt"
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
 	"github.com/ledgerwatch/erigon/turbo/trie"
+	"gotest.tools/v3/assert"
 )
 
 func prepareSMT(t *testing.T) (*smt.SMT, *trie.RetainList) {
@@ -102,6 +103,7 @@ func findNode(t *testing.T, w *trie.Witness, addr libcommon.Address, storageKey 
 	return nil
 }
 
+// TestWitnessToSMT tests that the SMT built from a witness matches the original SMT
 func TestWitnessToSMT(t *testing.T) {
 	smtTrie, rl := prepareSMT(t)
 
@@ -130,15 +132,15 @@ func TestWitnessToSMT(t *testing.T) {
 		t.Errorf("error getting last root: %v", err)
 	}
 
+	// assert that the roots are the same
 	if expectedRoot.Cmp(root) != 0 {
 		t.Errorf(fmt.Sprintf("SMT root mismatch, expected %x, got %x", expectedRoot.Bytes(), root.Bytes()))
 	}
 }
 
+// TestWitnessToSMTStateReader tests that the SMT built from a witness matches the state
 func TestWitnessToSMTStateReader(t *testing.T) {
 	smtTrie, rl := prepareSMT(t)
-
-	testStorageKey := libcommon.HexToHash("0x5")
 
 	expectedRoot, err := smtTrie.Db.GetLastRoot()
 	if err != nil {
@@ -168,22 +170,21 @@ func TestWitnessToSMTStateReader(t *testing.T) {
 	expectedAcc, _ := smtTrie.ReadAccountData(contract)
 	newAcc, _ := newSMT.ReadAccountData(contract)
 
-	expectedAccStorage, _ := smtTrie.ReadAccountStorage(contract, 0, &testStorageKey)
-	newAccStorage, _ := newSMT.ReadAccountStorage(contract, 0, &testStorageKey)
 	expectedAccCode, _ := smtTrie.ReadAccountCode(contract, 0, expectedAcc.CodeHash)
 	newAccCode, _ := newSMT.ReadAccountCode(contract, 0, newAcc.CodeHash)
 	expectedAccCodeSize, _ := smtTrie.ReadAccountCodeSize(contract, 0, expectedAcc.CodeHash)
 	newAccCodeSize, _ := newSMT.ReadAccountCodeSize(contract, 0, newAcc.CodeHash)
 
-	fmt.Printf("expectedAcc : %+v\n", expectedAcc)
-	fmt.Printf("newAcc      : %+v\n", newAcc)
+	// assert that the account data is the same
+	assert.DeepEqual(t, expectedAcc, newAcc)
 
-	fmt.Printf("expectedAccStorage : %+v\n", expectedAccStorage)
-	fmt.Printf("newAccStorage      : %+v\n", newAccStorage)
-	fmt.Printf("expectedAccCode : %+v\n", expectedAccCode)
-	fmt.Printf("newAccCode      : %+v\n", newAccCode)
-	fmt.Printf("expectedAccCodeSize : %+v\n", expectedAccCodeSize)
-	fmt.Printf("newAccCodeSize      : %+v\n", newAccCodeSize)
+	// assert that the account code is the same
+	if !bytes.Equal(expectedAccCode, newAccCode) {
+		t.Error("Account Code Mismatch")
+	}
+
+	// assert that the account code size is the same
+	assert.Equal(t, expectedAccCodeSize, newAccCodeSize)
 }
 
 func TestSMTWitnessRetainList(t *testing.T) {

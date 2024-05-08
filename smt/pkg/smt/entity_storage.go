@@ -12,6 +12,7 @@ import (
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
 )
 
+// SetAccountState sets the balance and nonce of an account
 func (s *SMT) SetAccountState(ethAddr string, balance, nonce *big.Int) (*big.Int, error) {
 	_, err := s.SetAccountBalance(ethAddr, balance)
 	if err != nil {
@@ -26,6 +27,7 @@ func (s *SMT) SetAccountState(ethAddr string, balance, nonce *big.Int) (*big.Int
 	return auxOut, nil
 }
 
+// SetAccountBalance sets the balance of an account
 func (s *SMT) SetAccountBalance(ethAddr string, balance *big.Int) (*big.Int, error) {
 	keyBalance, err := utils.KeyEthAddrBalance(ethAddr)
 	if err != nil {
@@ -46,6 +48,7 @@ func (s *SMT) SetAccountBalance(ethAddr string, balance *big.Int) (*big.Int, err
 	return auxRes.NewRootScalar.ToBigInt(), err
 }
 
+// SetAccountNonce sets the nonce of an account
 func (s *SMT) SetAccountNonce(ethAddr string, nonce *big.Int) (*big.Int, error) {
 	keyNonce, err := utils.KeyEthAddrNonce(ethAddr)
 	if err != nil {
