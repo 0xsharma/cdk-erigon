@@ -1,6 +1,7 @@
 package smt
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 
@@ -32,6 +33,8 @@ func (s *SMT) ReadAccountData(address libcommon.Address) (*accounts.Account, err
 		return nil, err
 	}
 	account.CodeHash = codeHash
+
+	account.Root = libcommon.Hash{}
 
 	return &account, nil
 }
@@ -123,36 +126,35 @@ func (s *SMT) GetAccountStorageRoot(address libcommon.Address) (libcommon.Hash, 
 func (s *SMT) getValueInBytes(key int, address libcommon.Address) ([]byte, error) {
 	value := []byte{}
 
+	ethAddr := address.String()
+
+	kn, err := utils.Key(ethAddr, key)
+	if err != nil {
+		return nil, err
+	}
+
+	keyPath := kn.GetPath()
+
+	keyPathBytes := make([]byte, 0)
+	for _, k := range keyPath {
+		keyPathBytes = append(keyPathBytes, byte(k))
+	}
+
 	action := func(prefix []byte, k utils.NodeKey, v utils.NodeValue12) (bool, error) {
+		if !bytes.HasPrefix(keyPathBytes, prefix) {
+			return false, nil
+		}
+
 		if v.IsFinalNode() {
-			actualK, err := s.Db.GetHashKey(k)
+			valHash := v.Get4to8()
+			v, err := s.Db.Get(*valHash)
 			if err != nil {
 				return false, err
 			}
+			vInBytes := utils.ArrayBigToScalar(utils.BigIntArrayFromNodeValue8(v.GetNodeValue8())).Bytes()
 
-			keySource, err := s.Db.GetKeySource(actualK)
-			if err != nil {
-				return false, err
-			}
-
-			t, addr, _, err := utils.DecodeKeySource(keySource)
-			if err != nil {
-				return false, err
-			}
-
-			if t == key && addr == address {
-				valHash := v.Get4to8()
-				v, err := s.Db.Get(*valHash)
-				if err != nil {
-					return false, err
-
-				}
-				vInBytes := utils.ArrayBigToScalar(utils.BigIntArrayFromNodeValue8(v.GetNodeValue8())).Bytes()
-
-				value = vInBytes
-				return false, nil
-			}
-
+			value = vInBytes
+			return false, nil
 		}
 
 		return true, nil
