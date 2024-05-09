@@ -42,7 +42,17 @@ func (s *SMT) ReadAccountData(address libcommon.Address) (*accounts.Account, err
 
 // ReadAccountStorage reads account storage from the SMT (not implemented for SMT)
 func (s *SMT) ReadAccountStorage(address libcommon.Address, incarnation uint64, key *libcommon.Hash) ([]byte, error) {
-	return []byte{}, nil
+	storageMap, err := s.getStorageMap(address)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	value, ok := storageMap[*key]
+	if !ok {
+		return []byte{}, nil
+	}
+
+	return value.Bytes(), nil
 }
 
 // ReadAccountCode reads account code from the SMT
