@@ -9,7 +9,6 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
-	"github.com/ledgerwatch/erigon/turbo/trie"
 	"github.com/ledgerwatch/erigon/zkevm/log"
 )
 
@@ -42,17 +41,12 @@ func (s *SMT) ReadAccountData(address libcommon.Address) (*accounts.Account, err
 
 // ReadAccountStorage reads account storage from the SMT (not implemented for SMT)
 func (s *SMT) ReadAccountStorage(address libcommon.Address, incarnation uint64, key *libcommon.Hash) ([]byte, error) {
-	storageMap, err := s.getStorageMap(address)
+	value, err := s.getValue(0, address, key)
 	if err != nil {
 		return []byte{}, err
 	}
 
-	value, ok := storageMap[*key]
-	if !ok {
-		return []byte{}, nil
-	}
-
-	return value.Bytes(), nil
+	return value, nil
 }
 
 // ReadAccountCode reads account code from the SMT
@@ -67,7 +61,7 @@ func (s *SMT) ReadAccountCode(address libcommon.Address, incarnation uint64, cod
 
 // ReadAccountCodeSize reads account code size from the SMT
 func (s *SMT) ReadAccountCodeSize(address libcommon.Address, incarnation uint64, codeHash libcommon.Hash) (int, error) {
-	valueInBytes, err := s.getValueInBytes(utils.SC_LENGTH, address)
+	valueInBytes, err := s.getValue(utils.SC_LENGTH, address, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -86,7 +80,7 @@ func (s *SMT) ReadAccountIncarnation(address libcommon.Address) (uint64, error) 
 func (s *SMT) GetAccountBalance(address libcommon.Address) (*uint256.Int, error) {
 	balance := uint256.NewInt(0)
 
-	valueInBytes, err := s.getValueInBytes(utils.KEY_BALANCE, address)
+	valueInBytes, err := s.getValue(utils.KEY_BALANCE, address, nil)
 	if err != nil {
 		log.Error("error getting balance", "error", err)
 		return nil, err
@@ -100,7 +94,7 @@ func (s *SMT) GetAccountBalance(address libcommon.Address) (*uint256.Int, error)
 func (s *SMT) GetAccountNonce(address libcommon.Address) (*uint256.Int, error) {
 	nonce := uint256.NewInt(0)
 
-	valueInBytes, err := s.getValueInBytes(utils.KEY_NONCE, address)
+	valueInBytes, err := s.getValue(utils.KEY_NONCE, address, nil)
 	if err != nil {
 		log.Error("error getting nonce", "error", err)
 		return nil, err
@@ -114,7 +108,7 @@ func (s *SMT) GetAccountNonce(address libcommon.Address) (*uint256.Int, error) {
 func (s *SMT) GetAccountCodeHash(address libcommon.Address) (libcommon.Hash, error) {
 	codeHash := libcommon.Hash{}
 
-	valueInBytes, err := s.getValueInBytes(utils.SC_CODE, address)
+	valueInBytes, err := s.getValue(utils.SC_CODE, address, nil)
 	if err != nil {
 		log.Error("error getting codehash", "error", err)
 		return libcommon.Hash{}, err
@@ -124,36 +118,35 @@ func (s *SMT) GetAccountCodeHash(address libcommon.Address) (libcommon.Hash, err
 	return codeHash, nil
 }
 
-// GetAccountStorageRoot returns the StorageRoot of an account from the SMT (not implemented for SMT)
-func (s *SMT) GetAccountStorageRoot(address libcommon.Address) (libcommon.Hash, error) {
-	storageTrie := trie.New(libcommon.Hash{})
+// getValue returns the value of a key from SMT by traversing the SMT
+func (s *SMT) getValue(key int, address libcommon.Address, storageKey *libcommon.Hash) ([]byte, error) {
+	ethAddr := address.String()
+	var kn utils.NodeKey
+	var err error
 
-	storageMap, err := s.getStorageMap(address)
-	if err != nil {
-		return libcommon.Hash{}, err
+	if storageKey == nil {
+		kn, err = utils.Key(ethAddr, key)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		a := utils.ConvertHexToBigInt(address.String())
+		add := utils.ScalarToArrayBig(a)
+
+		kn, err = utils.KeyContractStorage(add, storageKey.String())
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	for key, value := range storageMap {
-		storageTrie.Update(key[:], value[:])
-	}
-
-	rootHash := storageTrie.Hash()
-
-	return rootHash, nil
+	return s.getValueInBytes(kn)
 }
 
 // getValueInBytes returns the value of a key from SMT in bytes by traversing the SMT
-func (s *SMT) getValueInBytes(key int, address libcommon.Address) ([]byte, error) {
+func (s *SMT) getValueInBytes(nodeKey utils.NodeKey) ([]byte, error) {
 	value := []byte{}
 
-	ethAddr := address.String()
-
-	kn, err := utils.Key(ethAddr, key)
-	if err != nil {
-		return nil, err
-	}
-
-	keyPath := kn.GetPath()
+	keyPath := nodeKey.GetPath()
 
 	keyPathBytes := make([]byte, 0)
 	for _, k := range keyPath {
@@ -191,55 +184,4 @@ func (s *SMT) getValueInBytes(key int, address libcommon.Address) ([]byte, error
 	}
 
 	return value, nil
-}
-
-// getStorageMap returns the storage map of an address from the SMT
-func (s *SMT) getStorageMap(address libcommon.Address) (map[libcommon.Hash]libcommon.Hash, error) {
-	storageMap := make(map[libcommon.Hash]libcommon.Hash)
-	action := func(prefix []byte, k utils.NodeKey, v utils.NodeValue12) (bool, error) {
-		if v.IsFinalNode() {
-			actualK, err := s.Db.GetHashKey(k)
-			if err != nil {
-				return false, err
-			}
-
-			keySource, err := s.Db.GetKeySource(actualK)
-			if err != nil {
-				return false, err
-			}
-
-			t, addr, storageKey, err := utils.DecodeKeySource(keySource)
-			if err != nil {
-				return false, err
-			}
-
-			if t == utils.SC_STORAGE && addr == address {
-				valHash := v.Get4to8()
-				v, err := s.Db.Get(*valHash)
-				if err != nil {
-					return false, err
-
-				}
-				vInBytes := utils.ArrayBigToScalar(utils.BigIntArrayFromNodeValue8(v.GetNodeValue8())).Bytes()
-
-				storageMap[storageKey] = libcommon.BytesToHash(vInBytes)
-				return true, nil
-			}
-
-		}
-
-		return true, nil
-	}
-
-	root, err := s.Db.GetLastRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.Traverse(context.Background(), root, action)
-	if err != nil {
-		return nil, err
-	}
-
-	return storageMap, nil
 }

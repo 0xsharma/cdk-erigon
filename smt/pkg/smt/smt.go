@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gateway-fm/cdk-erigon-lib/common"
+	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 
 	"github.com/ledgerwatch/erigon/smt/pkg/db"
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
@@ -51,7 +51,8 @@ type DebuggableDB interface {
 }
 
 type SMT struct {
-	Db DB
+	Db         DB
+	StorageMap map[libcommon.Address]*map[libcommon.Hash]libcommon.Hash
 
 	clearUpMutex sync.Mutex
 }
@@ -67,7 +68,8 @@ func NewSMT(database DB) *SMT {
 	}
 
 	return &SMT{
-		Db: database,
+		Db:         database,
+		StorageMap: make(map[libcommon.Address]*map[libcommon.Hash]libcommon.Hash),
 	}
 }
 
@@ -165,7 +167,7 @@ func (s *SMT) InsertStorage(ethAddr string, storage *map[string]string, chm *map
 
 		sp, _ := utils.StrValToBigInt(k)
 
-		ks := utils.EncodeKeySource(utils.SC_STORAGE, utils.ConvertHexToAddress(ethAddr), common.BigToHash(sp))
+		ks := utils.EncodeKeySource(utils.SC_STORAGE, utils.ConvertHexToAddress(ethAddr), libcommon.BigToHash(sp))
 		err = s.Db.InsertKeySource(keyStoragePosition, ks)
 
 		if err != nil {

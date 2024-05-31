@@ -71,7 +71,6 @@ func prepareSMT(t *testing.T) (*smt.SMT, *trie.RetainList) {
 
 	storage := make(map[string]string, 0)
 
-	// TODO : 0xsharma : change iterations back to 100
 	for i := 0; i < 100; i++ {
 		k := libcommon.HexToHash(fmt.Sprintf("0x%d", i))
 		storage[k.String()] = k.String()
@@ -142,6 +141,8 @@ func TestWitnessToSMT(t *testing.T) {
 func TestWitnessToSMTStateReader(t *testing.T) {
 	smtTrie, rl := prepareSMT(t)
 
+	sKey := libcommon.HexToHash("0x5")
+
 	expectedRoot, err := smtTrie.Db.GetLastRoot()
 	if err != nil {
 		t.Errorf("error getting last root: %v", err)
@@ -174,6 +175,8 @@ func TestWitnessToSMTStateReader(t *testing.T) {
 	newAccCode, _ := newSMT.ReadAccountCode(contract, 0, newAcc.CodeHash)
 	expectedAccCodeSize, _ := smtTrie.ReadAccountCodeSize(contract, 0, expectedAcc.CodeHash)
 	newAccCodeSize, _ := newSMT.ReadAccountCodeSize(contract, 0, newAcc.CodeHash)
+	expectedStorageValue, _ := smtTrie.ReadAccountStorage(contract, 0, &sKey)
+	newStorageValue, _ := newSMT.ReadAccountStorage(contract, 0, &sKey)
 
 	// assert that the account data is the same
 	assert.DeepEqual(t, expectedAcc, newAcc)
@@ -185,6 +188,11 @@ func TestWitnessToSMTStateReader(t *testing.T) {
 
 	// assert that the account code size is the same
 	assert.Equal(t, expectedAccCodeSize, newAccCodeSize)
+
+	// assert that the storage value is the same
+	if !bytes.Equal(expectedStorageValue, newStorageValue) {
+		t.Error("Storage Value Mismatch")
+	}
 }
 
 func TestSMTWitnessRetainList(t *testing.T) {
